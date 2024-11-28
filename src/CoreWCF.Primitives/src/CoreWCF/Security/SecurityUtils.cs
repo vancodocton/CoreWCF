@@ -638,7 +638,7 @@ namespace CoreWCF.Security
             SymmetricSecurityKey c2 = SecurityUtils.GetSecurityKey<SymmetricSecurityKey>(t2);
             if (c1 == null || c2 == null || !CryptoHelper.IsEqual(c1.GetSymmetricKey(), c2.GetSymmetricKey()))
             {
-                throw System.ServiceModel.Diagnostics.TraceUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.TokenNotExpectedInSecurityHeader, t2)), message);
+                throw Diagnostics.TraceUtility.ThrowHelperError(new MessageSecurityException(SR.Format(SR.TokenNotExpectedInSecurityHeader, t2)), message);
             }
         }
 

@@ -2,16 +2,17 @@
 // Copyright (c) Microsoft Corporation.  All rights reserved.
 //------------------------------------------------------------
 
-namespace System.ServiceModel.Security
-{
-    using System.Collections.ObjectModel;
-    using System.IdentityModel.Selectors;
-    using System.IdentityModel.Tokens;
-    using System.Runtime;
-    using System.ServiceModel;
-    using System.ServiceModel.Description;
-    using System.ServiceModel.Security.Tokens;
+using System;
+using System.Collections.ObjectModel;
+using System.Threading.Tasks;
+using CoreWCF.Description;
+using CoreWCF.IdentityModel.Selectors;
+using CoreWCF.IdentityModel.Tokens;
+using CoreWCF.Runtime;
+using CoreWCF.Security.Tokens;
 
+namespace CoreWCF.Security
+{
     class AsymmetricSecurityProtocolFactory : MessageSecurityProtocolFactory
     {
         SecurityTokenParameters cryptoTokenParameters;
@@ -155,11 +156,11 @@ namespace System.ServiceModel.Security
             {
                 if (this.recipientAsymmetricTokenProvider != null)
                 {
-                    SecurityUtils.CloseTokenProviderIfRequired(this.recipientAsymmetricTokenProvider, timeoutHelper.RemainingTime());
+                    SecurityUtils.CloseTokenProviderIfRequiredAsync(this.recipientAsymmetricTokenProvider, timeoutHelper.GetCancellationToken());
                 }
                 if (this.recipientCryptoTokenAuthenticator != null)
                 {
-                    SecurityUtils.CloseTokenAuthenticatorIfRequired(this.recipientCryptoTokenAuthenticator, timeoutHelper.RemainingTime());
+                    SecurityUtils.CloseTokenAuthenticatorIfRequiredAsync(this.recipientCryptoTokenAuthenticator, timeoutHelper.GetCancellationToken());
                 }
             }
             base.OnClose(timeoutHelper.RemainingTime());
@@ -181,15 +182,15 @@ namespace System.ServiceModel.Security
             base.OnAbort();
         }
 
-        protected override SecurityProtocol OnCreateSecurityProtocol(EndpointAddress target, Uri via, object listenerSecurityState, TimeSpan timeout)
+        internal override SecurityProtocol OnCreateSecurityProtocol(EndpointAddress target, Uri via, TimeSpan timeout)
         {
             return new AsymmetricSecurityProtocol(this, target, via);
         }
 
-        public override void OnOpen(TimeSpan timeout)
+        public override async Task OnOpenAsync(TimeSpan timeout)
         {
             TimeoutHelper timeoutHelper = new TimeoutHelper(timeout);
-            base.OnOpen(timeoutHelper.RemainingTime());
+           await base.OnOpenAsync(timeoutHelper.RemainingTime());
 
             // open forward direction
             if (this.ActAsInitiator)

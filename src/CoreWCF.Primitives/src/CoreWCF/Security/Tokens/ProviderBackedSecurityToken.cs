@@ -5,6 +5,7 @@ using System;
 using System.Security.Authentication.ExtendedProtection;
 using CoreWCF.IdentityModel.Selectors;
 using CoreWCF.IdentityModel.Tokens;
+using CoreWCF.Runtime;
 
 namespace CoreWCF.Security.Tokens
 {
@@ -17,9 +18,7 @@ namespace CoreWCF.Security.Tokens
     internal class ProviderBackedSecurityToken : SecurityToken
     {
         // Double-checked locking pattern requires volatile for read/write synchronization
-#pragma warning disable CS0649 // The field is never assigned to
-        private readonly SecurityToken _securityToken;
-#pragma warning restore CS0649 // The field is never assigned to
+        private SecurityToken _securityToken;
         private TimeSpan _timeout;
         private ChannelBinding _channelBinding;
         private readonly object _lock;
@@ -44,35 +43,21 @@ namespace CoreWCF.Security.Tokens
 
         private void ResolveSecurityToken()
         {
-            throw new NotImplementedException();
-            //TODO
-            //if ( _securityToken == null )
-            //{
-            //    lock ( _lock )
-            //    {
-            //        if ( _securityToken == null )
-            //        {
+            if (_securityToken == null)
+            {
+                lock (_lock)
+                {
+                    if (_securityToken == null)
+                    {
+                        _securityToken = TokenProvider.GetToken((new TimeoutHelper(_timeout)).RemainingTime());
+                    }
+                }
+            }
 
-            //            ClientCredentialsSecurityTokenManager.KerberosSecurityTokenProviderWrapper kerbTokenProvider = _tokenProvider 
-            //                                            as ClientCredentialsSecurityTokenManager.KerberosSecurityTokenProviderWrapper;
-            //            if (kerbTokenProvider != null)
-            //            {
-            //                _securityToken = kerbTokenProvider.GetToken((new TimeoutHelper(_timeout)).RemainingTime(), _channelBinding);
-            //            }
-            //            else
-            //            {
-            //                _securityToken = _tokenProvider.GetToken((new TimeoutHelper(_timeout)).RemainingTime());
-            //            }
-            //        }
-            //    }
-            //}
-
-            //if ( _securityToken == null )
-            //{
-            //    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError( new SecurityTokenException( SR.Format( SR.SecurityTokenNotResolved, _tokenProvider.GetType().ToString() ) ) );
-            //}
-
-            //return;
+            if (_securityToken == null)
+            {
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new SecurityTokenException(SR.Format(SR.SecurityTokenNotResolved, TokenProvider.GetType().ToString())));
+            }
         }
 
         public SecurityToken Token

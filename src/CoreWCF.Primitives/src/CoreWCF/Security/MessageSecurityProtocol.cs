@@ -1,22 +1,26 @@
-//----------------------------------------------------------
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-//------------------------------------------------------------
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
 
-namespace System.ServiceModel.Security
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Threading;
+using System.Threading.Tasks;
+using CoreWCF;
+using CoreWCF.Channels;
+using CoreWCF.Description;
+using CoreWCF.Diagnostics;
+using CoreWCF.IdentityModel.Policy;
+using CoreWCF.IdentityModel.Selectors;
+using CoreWCF.IdentityModel.Tokens;
+using CoreWCF.Runtime;
+using CoreWCF.Security;
+using CoreWCF.Security.Tokens;
+
+namespace CoreWcf.Security
 {
-    using System.Collections.Generic;
-    using System.Collections.ObjectModel;
-    using System.IdentityModel.Policy;
-    using System.IdentityModel.Selectors;
-    using System.IdentityModel.Tokens;
-    using System.Runtime;
-    using System.ServiceModel;
-    using System.ServiceModel.Channels;
-    using System.ServiceModel.Diagnostics;
-    using System.ServiceModel.Description;
-    using System.ServiceModel.Security.Tokens;
 
-    abstract class MessageSecurityProtocol : SecurityProtocol
+    internal abstract class MessageSecurityProtocol : SecurityProtocol
     {
         readonly MessageSecurityProtocolFactory factory;
         SecurityToken identityVerifiedToken; // verified for the readonly target
@@ -76,6 +80,7 @@ namespace System.ServiceModel.Security
             get { return this.factory; }
         }
 
+        /*
         public override IAsyncResult BeginSecureOutgoingMessage(Message message, TimeSpan timeout, AsyncCallback callback, object state)
         {
             try
@@ -166,6 +171,7 @@ namespace System.ServiceModel.Security
         }
 
         protected abstract void EndSecureOutgoingMessageCore(IAsyncResult result, out Message message, out SecurityProtocolCorrelationState newCorrelationState);
+        */
 
         // helper method for attaching the client claims in a symmetric security protocol
         protected void AttachRecipientSecurityProperty(Message message, SecurityToken protectionToken, bool isWrappedToken, IList<SecurityToken> basicTokens, IList<SecurityToken> endorsingTokens,
@@ -199,14 +205,14 @@ namespace System.ServiceModel.Security
         {
             if (token == null)
             {
-                throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.NoSigningTokenAvailableToDoIncomingIdentityCheck)), message);
+                throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.NoSigningTokenAvailableToDoIncomingIdentityCheck), message);
             }
             AuthorizationContext authContext = (authorizationPolicies != null) ? AuthorizationContext.CreateDefaultAuthorizationContext(authorizationPolicies) : null;
             if (this.factory.IdentityVerifier != null)
             {
                 if (this.Target == null)
                 {
-                    throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.NoOutgoingEndpointAddressAvailableForDoingIdentityCheckOnReply)), message);
+                    throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.NoOutgoingEndpointAddressAvailableForDoingIdentityCheckOnReply), message);
                 }
 
                 this.factory.IdentityVerifier.EnsureIncomingIdentity(this.Target, authContext);
@@ -226,7 +232,7 @@ namespace System.ServiceModel.Security
             }
             if (this.Target == null)
             {
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.NoOutgoingEndpointAddressAvailableForDoingIdentityCheck)));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.NoOutgoingEndpointAddressAvailableForDoingIdentityCheck));
             }
             ReadOnlyCollection<IAuthorizationPolicy> authzPolicies = authenticator.ValidateToken(token);
             this.factory.IdentityVerifier.EnsureOutgoingIdentity(this.Target, authzPolicies);
@@ -266,13 +272,13 @@ namespace System.ServiceModel.Security
                     }
                     else if (!object.ReferenceEquals(token, correlationStates[i].Token))
                     {
-                        throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.MultipleCorrelationTokensFound)));
+                        throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.MultipleCorrelationTokensFound));
                     }
                 }
             }
             if (token == null)
             {
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.NoCorrelationTokenFound)));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.NoCorrelationTokenFound));
             }
             return token;
         }
@@ -282,7 +288,7 @@ namespace System.ServiceModel.Security
         {
             if (correlationState == null || correlationState.Token == null)
             {
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.CannotFindCorrelationStateForApplyingSecurity)));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.CannotFindCorrelationStateForApplyingSecurity));
             }
             return correlationState.Token;
         }
@@ -291,13 +297,13 @@ namespace System.ServiceModel.Security
         {
             if (token is WrappedKeySecurityToken)
             {
-                throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.TokenNotExpectedInSecurityHeader, token)), message);
+                throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.Format(SR.TokenNotExpectedInSecurityHeader, token)), message);
             }
         }
 
-        protected SecurityToken GetTokenAndEnsureOutgoingIdentity(SecurityTokenProvider provider, bool isEncryptionOn, TimeSpan timeout, SecurityTokenAuthenticator authenticator)
+        protected async Task<SecurityToken> GetTokenAndEnsureOutgoingIdentityAsync(SecurityTokenProvider provider, bool isEncryptionOn, CancellationToken cancellationToken, SecurityTokenAuthenticator authenticator)
         {
-            SecurityToken token = GetToken(provider, this.Target, timeout);
+            SecurityToken token = await GetTokenAsync(provider, this.Target, cancellationToken);
             if (isEncryptionOn)
             {
                 EnsureOutgoingIdentity(token, authenticator);
@@ -345,7 +351,7 @@ namespace System.ServiceModel.Security
         protected ReceiveSecurityHeader CreateSecurityHeader(Message message, string actor, MessageDirection transferDirection, SecurityStandardsManager standardsManager)
         {
             standardsManager = standardsManager ?? this.factory.StandardsManager;
-            ReceiveSecurityHeader securityHeader = standardsManager.CreateReceiveSecurityHeader(message, actor,
+            ReceiveSecurityHeader securityHeader = standardsManager.TryCreateReceiveSecurityHeader(message, actor,
                this.factory.IncomingAlgorithmSuite, transferDirection);
             securityHeader.Layout = this.factory.SecurityHeaderLayout;
             securityHeader.MaxReceivedMessageSize = factory.SecurityBindingElement.MaxReceivedMessageSize;
@@ -422,7 +428,7 @@ namespace System.ServiceModel.Security
             return securityHeader;
         }
 
-        protected void ProcessSecurityHeader(ReceiveSecurityHeader securityHeader, ref Message message,
+        protected async Task<Message> ProcessSecurityHeaderAsync(ReceiveSecurityHeader securityHeader, Message message,
             SecurityToken requiredSigningToken, TimeSpan timeout, SecurityProtocolCorrelationState[] correlationStates)
         {
             TimeoutHelper timeoutHelper = new TimeoutHelper(timeout);
@@ -430,15 +436,15 @@ namespace System.ServiceModel.Security
             securityHeader.ReplayDetectionEnabled = this.factory.DetectReplays;
             securityHeader.SetTimeParameters(this.factory.NonceCache, this.factory.ReplayWindow, this.factory.MaxClockSkew);
 
-            securityHeader.Process(timeoutHelper.RemainingTime(), SecurityUtils.GetChannelBindingFromMessage(message), this.factory.ExtendedProtectionPolicy);
+            await securityHeader.ProcessAsync(timeoutHelper.RemainingTime(), SecurityUtils.GetChannelBindingFromMessage(message), this.factory.ExtendedProtectionPolicy);
             if (this.factory.AddTimestamp && securityHeader.Timestamp == null)
             {
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new MessageSecurityException(SR.GetString(SR.RequiredTimestampMissingInSecurityHeader)));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new MessageSecurityException(SR.RequiredTimestampMissingInSecurityHeader));
             }
 
             if (requiredSigningToken != null && requiredSigningToken != securityHeader.SignatureToken)
             {
-                throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.ReplyWasNotSignedWithRequiredSigningToken)), message);
+                throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.ReplyWasNotSignedWithRequiredSigningToken), message);
             }
 
             if (this.DoAutomaticEncryptionMatch)
@@ -451,7 +457,7 @@ namespace System.ServiceModel.Security
                 CheckSignatureConfirmation(securityHeader, correlationStates);
             }
 
-            message = securityHeader.ProcessedMessage;
+            return securityHeader.ProcessedMessage;
         }
 
         protected void CheckSignatureConfirmation(ReceiveSecurityHeader securityHeader, SecurityProtocolCorrelationState[] correlationStates)
@@ -473,7 +479,7 @@ namespace System.ServiceModel.Security
             {
                 if (receivedConfirmations != null && receivedConfirmations.Count > 0)
                 {
-                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.FoundUnexpectedSignatureConfirmations)));
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.FoundUnexpectedSignatureConfirmations));
                 }
                 return;
             }
@@ -517,11 +523,37 @@ namespace System.ServiceModel.Security
             }
             if (!allSignaturesConfirmed)
             {
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.NotAllSignaturesConfirmed)));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.NotAllSignaturesConfirmed));
             }
         }
 
-        public override void SecureOutgoingMessage(ref Message message, TimeSpan timeout)
+        public override Message SecureOutgoingMessage(Message message, CancellationToken token)
+        {
+            this.CommunicationObject.ThrowIfClosedOrNotOpen();
+            try
+            {
+                ValidateOutgoingState(message);
+                if (!this.RequiresOutgoingSecurityProcessing && message.Properties.Security == null)
+                {
+                    return message;
+                }
+
+                (_, message) = SecureOutgoingMessageCore(message, token, null);
+                base.OnOutgoingMessageSecured(message);
+            }
+            catch (Exception exception)
+            {
+                // Always immediately rethrow fatal exceptions.
+                if (Fx.IsFatal(exception)) throw;
+
+                base.OnSecureOutgoingMessageFailure(message);
+                throw;
+            }
+
+            return message;
+        }
+
+        public override (SecurityProtocolCorrelationState, Message) SecureOutgoingMessage(Message message, SecurityProtocolCorrelationState correlationState, CancellationToken token)
         {
             try
             {
@@ -529,11 +561,11 @@ namespace System.ServiceModel.Security
                 ValidateOutgoingState(message);
                 if (!this.RequiresOutgoingSecurityProcessing && message.Properties.Security == null)
                 {
-                    return;
+                    return (null, message);
                 }
-
-                SecureOutgoingMessageCore(ref message, timeout, null);
+                (SecurityProtocolCorrelationState newCorrelationState, message) = SecureOutgoingMessageCore(message, token, correlationState);
                 base.OnOutgoingMessageSecured(message);
+                return (newCorrelationState, message);
             }
             catch (Exception exception)
             {
@@ -545,37 +577,13 @@ namespace System.ServiceModel.Security
             }
         }
 
-        public override SecurityProtocolCorrelationState SecureOutgoingMessage(ref Message message, TimeSpan timeout, SecurityProtocolCorrelationState correlationState)
-        {
-            try
-            {
-                this.CommunicationObject.ThrowIfClosedOrNotOpen();
-                ValidateOutgoingState(message);
-                if (!this.RequiresOutgoingSecurityProcessing && message.Properties.Security == null)
-                {
-                    return null;
-                }
-                SecurityProtocolCorrelationState newCorrelationState = SecureOutgoingMessageCore(ref message, timeout, correlationState);
-                base.OnOutgoingMessageSecured(message);
-                return newCorrelationState;
-            }
-            catch (Exception exception)
-            {
-                // Always immediately rethrow fatal exceptions.
-                if (Fx.IsFatal(exception)) throw;
-
-                base.OnSecureOutgoingMessageFailure(message);
-                throw;
-            }
-        }
-
-        protected abstract SecurityProtocolCorrelationState SecureOutgoingMessageCore(ref Message message, TimeSpan timeout, SecurityProtocolCorrelationState correlationState);
+        protected abstract (SecurityProtocolCorrelationState, Message) SecureOutgoingMessageCore(Message message, CancellationToken token, SecurityProtocolCorrelationState correlationState);
 
         void ValidateOutgoingState(Message message)
         {
             if (this.PerformIncomingAndOutgoingMessageExpectationChecks && !this.factory.ExpectOutgoingMessages)
             {
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.GetString(SR.SecurityBindingNotSetUpToProcessOutgoingMessages)));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.SecurityBindingNotSetUpToProcessOutgoingMessages));
             }
             if (message == null)
             {
@@ -583,14 +591,15 @@ namespace System.ServiceModel.Security
             }
         }
 
-        public override void VerifyIncomingMessage(ref Message message, TimeSpan timeout)
+
+        public override async ValueTask<Message> VerifyIncomingMessageAsync(Message message, TimeSpan timeout)
         {
+            this.CommunicationObject.ThrowIfClosedOrNotOpen();
             try
             {
-                this.CommunicationObject.ThrowIfClosedOrNotOpen();
                 if (this.PerformIncomingAndOutgoingMessageExpectationChecks && !factory.ExpectIncomingMessages)
                 {
-                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.GetString(SR.SecurityBindingNotSetUpToProcessIncomingMessages)));
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.SecurityBindingNotSetUpToProcessIncomingMessages));
                 }
                 if (message == null)
                 {
@@ -598,10 +607,10 @@ namespace System.ServiceModel.Security
                 }
                 if (!this.RequiresIncomingSecurityProcessing(message))
                 {
-                    return;
+                    return message;
                 }
                 string actor = string.Empty; // message.Version.Envelope.UltimateDestinationActor;
-                VerifyIncomingMessageCore(ref message, actor, timeout, null);
+                (message, _) = await VerifyIncomingMessageCoreAsync(message, actor, timeout, null);
                 base.OnIncomingMessageVerified(message);
             }
             catch (MessageSecurityException e)
@@ -615,18 +624,20 @@ namespace System.ServiceModel.Security
                 if (Fx.IsFatal(e)) throw;
 
                 base.OnVerifyIncomingMessageFailure(message, e);
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.MessageSecurityVerificationFailed), e));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.MessageSecurityVerificationFailed, e));
             }
+
+            return message;
         }
 
-        public override SecurityProtocolCorrelationState VerifyIncomingMessage(ref Message message, TimeSpan timeout, params SecurityProtocolCorrelationState[] correlationStates)
+        public override async ValueTask<(Message, SecurityProtocolCorrelationState)> VerifyIncomingMessageAsync(Message message, TimeSpan timeout, params SecurityProtocolCorrelationState[] correlationStates)
         {
             try
             {
                 this.CommunicationObject.ThrowIfClosedOrNotOpen();
                 if (this.PerformIncomingAndOutgoingMessageExpectationChecks && !factory.ExpectIncomingMessages)
                 {
-                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.GetString(SR.SecurityBindingNotSetUpToProcessIncomingMessages)));
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.SecurityBindingNotSetUpToProcessIncomingMessages));
                 }
                 if (message == null)
                 {
@@ -634,12 +645,12 @@ namespace System.ServiceModel.Security
                 }
                 if (!this.RequiresIncomingSecurityProcessing(message))
                 {
-                    return null;
+                    return (message, null);
                 }
                 string actor = string.Empty; // message.Version.Envelope.UltimateDestinationActor;
-                SecurityProtocolCorrelationState newCorrelationState = VerifyIncomingMessageCore(ref message, actor, timeout, correlationStates);
+                (message, SecurityProtocolCorrelationState newCorrelationState) = await VerifyIncomingMessageCoreAsync(message, actor, timeout, correlationStates);
                 base.OnIncomingMessageVerified(message);
-                return newCorrelationState;
+                return (message, newCorrelationState);
             }
             catch (MessageSecurityException e)
             {
@@ -652,11 +663,11 @@ namespace System.ServiceModel.Security
                 if (Fx.IsFatal(e)) throw;
 
                 base.OnVerifyIncomingMessageFailure(message, e);
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.MessageSecurityVerificationFailed), e));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.MessageSecurityVerificationFailed, e));
             }
         }
 
-        protected abstract SecurityProtocolCorrelationState VerifyIncomingMessageCore(ref Message message, string actor, TimeSpan timeout, SecurityProtocolCorrelationState[] correlationStates);
+        protected abstract Task<(Message, SecurityProtocolCorrelationState)> VerifyIncomingMessageCoreAsync(Message message, string actor, TimeSpan timeout, SecurityProtocolCorrelationState[] correlationStates);
 
         internal SecurityProtocolCorrelationState GetSignatureConfirmationCorrelationState(SecurityProtocolCorrelationState oldCorrelationState, SecurityProtocolCorrelationState newCorrelationState)
         {
@@ -670,6 +681,7 @@ namespace System.ServiceModel.Security
             }
         }
 
+        /*
         protected abstract class GetOneTokenAndSetUpSecurityAsyncResult : GetSupportingTokensAsyncResult
         {
             readonly MessageSecurityProtocol binding;
@@ -855,7 +867,7 @@ namespace System.ServiceModel.Security
                 {
                     if (token == null)
                     {
-                        throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.TokenProviderCannotGetTokensForTarget, this.binding.Target)), this.message);
+                        throw TraceUtility.ThrowHelperError(new MessageSecurityException(SR.Format(SR.TokenProviderCannotGetTokensForTarget, this.binding.Target)), this.message);
                     }
                     if (this.doIdentityChecks)
                     {
@@ -870,12 +882,7 @@ namespace System.ServiceModel.Security
                 }
                 else
                 {
-                    IAsyncResult result = this.secondaryProvider.BeginGetToken(this.timeoutHelper.RemainingTime(), getSecondaryTokenCompleteCallback, this);
-                    if (!result.CompletedSynchronously)
-                    {
-                        return false;
-                    }
-                    SecurityToken token2 = this.secondaryProvider.EndGetToken(result);
+                    SecurityToken token2 = this.secondaryProvider.GetTokenAsync(this.timeoutHelper.GetCancellationToken(), getSecondaryTokenCompleteCallback, this);
                     return this.OnGetSecondaryTokenComplete(token2);
                 }
             }
@@ -996,5 +1003,6 @@ namespace System.ServiceModel.Security
                 return completeSelf;
             }
         }
+        */
     }
 }

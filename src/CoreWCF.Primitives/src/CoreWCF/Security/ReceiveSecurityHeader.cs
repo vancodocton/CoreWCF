@@ -29,6 +29,7 @@ namespace CoreWCF.Security
         // asymmetric binding case: primaryTokenAuthenticator and wrapping token is set
 
         private SecurityTokenAuthenticator _primaryTokenAuthenticator;
+        private bool _allowFirstTokenMismatch;
         private SecurityToken _outOfBandPrimaryToken;
         private IList<SecurityToken> _outOfBandPrimaryTokenCollection;
         private SecurityTokenParameters _primaryTokenParameters;
@@ -408,19 +409,20 @@ namespace CoreWCF.Security
 
         public void ConfigureAsymmetricBindingClientReceiveHeader(SecurityToken primaryToken, SecurityTokenParameters primaryTokenParameters, SecurityToken encryptionToken, SecurityTokenParameters encryptionTokenParameters, SecurityTokenAuthenticator primaryTokenAuthenticator)
         {
-            this.outOfBandPrimaryToken = primaryToken;
-            this.primaryTokenParameters = primaryTokenParameters;
-            this.primaryTokenAuthenticator = primaryTokenAuthenticator;
-            this.allowFirstTokenMismatch = primaryTokenAuthenticator != null;
+            _outOfBandPrimaryToken = primaryToken;
+            _primaryTokenParameters = primaryTokenParameters;
+            _primaryTokenAuthenticator = primaryTokenAuthenticator;
+            _allowFirstTokenMismatch = primaryTokenAuthenticator != null;
             if (encryptionToken != null && !SecurityUtils.HasSymmetricSecurityKey(encryptionToken))
             {
-                this.wrappingToken = encryptionToken;
-                this.wrappingTokenParameters = encryptionTokenParameters;
+                _wrappingToken = encryptionToken;
+                _wrappingTokenParameters = encryptionTokenParameters;
             }
             else
             {
-                this.expectedEncryptionToken = encryptionToken;
-                this.expectedEncryptionTokenParameters = encryptionTokenParameters;
+                throw new NotSupportedException();
+                //expectedEncryptionToken = encryptionToken;
+                //expectedEncryptionTokenParameters = encryptionTokenParameters;
             }
         }
 
@@ -659,7 +661,7 @@ namespace CoreWCF.Security
 
             if (_primaryTokenParameters != null)
             {
-                _primaryTokenTracker = new TokenTracker(null, _outOfBandPrimaryToken, allowFirstTokenMismatch: false);
+                _primaryTokenTracker = new TokenTracker(null, _outOfBandPrimaryToken, _allowFirstTokenMismatch);
             }
             // universalTokenResolver is used for resolving tokens
             _universalTokenResolver = new SecurityHeaderTokenResolver(this);

@@ -1,21 +1,23 @@
-//----------------------------------------------------------
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-//------------------------------------------------------------
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
 
-namespace System.ServiceModel.Security
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Threading;
+using System.Threading.Tasks;
+using CoreWcf.Security;
+using CoreWCF.Channels;
+using CoreWCF.Description;
+using CoreWCF.IdentityModel.Policy;
+using CoreWCF.IdentityModel.Selectors;
+using CoreWCF.IdentityModel.Tokens;
+using CoreWCF.Runtime;
+using CoreWCF.Security.Tokens;
+
+namespace CoreWCF.Security
 {
-    using System.Collections.Generic;
-    using System.Collections.ObjectModel;
-    using System.IdentityModel.Policy;
-    using System.IdentityModel.Selectors;
-    using System.IdentityModel.Tokens;
-    using System.Runtime;
-    using System.ServiceModel;
-    using System.ServiceModel.Channels;
-    using System.ServiceModel.Description;
-    using System.ServiceModel.Security.Tokens;
-
-    sealed class AsymmetricSecurityProtocol : MessageSecurityProtocol
+    internal sealed class AsymmetricSecurityProtocol : MessageSecurityProtocol
     {
         SecurityTokenAuthenticator initiatorAsymmetricTokenAuthenticator;
         SecurityTokenProvider initiatorAsymmetricTokenProvider;
@@ -64,10 +66,10 @@ namespace System.ServiceModel.Security
             }
         }
 
-        public override void OnOpen(TimeSpan timeout)
+        public override async Task OnOpenAsync(TimeSpan timeout)
         {
             TimeoutHelper timeoutHelper = new TimeoutHelper(timeout);
-            base.OnOpen(timeoutHelper.RemainingTime());
+            await base.OnOpenAsync(timeoutHelper.RemainingTime());
             if (this.Factory.ActAsInitiator)
             {
                 if (this.Factory.ApplyIntegrity)
@@ -77,7 +79,7 @@ namespace System.ServiceModel.Security
                     requirement.KeyUsage = SecurityKeyUsage.Signature;
                     requirement.Properties[ServiceModelSecurityTokenRequirement.MessageDirectionProperty] = MessageDirection.Output;
                     this.initiatorCryptoTokenProvider = this.Factory.SecurityTokenManager.CreateSecurityTokenProvider(requirement);
-                    SecurityUtils.OpenTokenProviderIfRequired(this.initiatorCryptoTokenProvider, timeoutHelper.RemainingTime());
+                    await SecurityUtils.OpenTokenProviderIfRequiredAsync(this.initiatorCryptoTokenProvider, timeoutHelper.GetCancellationToken());
                 }
                 if (this.Factory.RequireIntegrity || this.Factory.ApplyConfidentiality)
                 {
@@ -86,7 +88,7 @@ namespace System.ServiceModel.Security
                     providerRequirement.KeyUsage = SecurityKeyUsage.Exchange;
                     providerRequirement.Properties[ServiceModelSecurityTokenRequirement.MessageDirectionProperty] = (this.Factory.ApplyConfidentiality) ? MessageDirection.Output : MessageDirection.Input;
                     this.initiatorAsymmetricTokenProvider = this.Factory.SecurityTokenManager.CreateSecurityTokenProvider(providerRequirement);
-                    SecurityUtils.OpenTokenProviderIfRequired(this.initiatorAsymmetricTokenProvider, timeoutHelper.RemainingTime());
+                    await SecurityUtils.OpenTokenProviderIfRequiredAsync(this.initiatorAsymmetricTokenProvider, timeoutHelper.GetCancellationToken());
 
                     InitiatorServiceModelSecurityTokenRequirement authenticatorRequirement = CreateInitiatorSecurityTokenRequirement();
                     this.Factory.AsymmetricTokenParameters.InitializeSecurityTokenRequirement(authenticatorRequirement);
@@ -96,7 +98,7 @@ namespace System.ServiceModel.Security
                     // Create authenticator (we dont support out of band resolvers on the client side
                     SecurityTokenResolver outOfBandTokenResolver;
                     this.initiatorAsymmetricTokenAuthenticator = this.Factory.SecurityTokenManager.CreateSecurityTokenAuthenticator(authenticatorRequirement, out outOfBandTokenResolver);
-                    SecurityUtils.OpenTokenAuthenticatorIfRequired(this.initiatorAsymmetricTokenAuthenticator, timeoutHelper.RemainingTime());
+                    await SecurityUtils.OpenTokenAuthenticatorIfRequiredAsync(this.initiatorAsymmetricTokenAuthenticator, timeoutHelper.GetCancellationToken());
                 }
             }
         }
@@ -121,27 +123,29 @@ namespace System.ServiceModel.Security
             base.OnAbort();
         }
 
-        public override void OnClose(TimeSpan timeout)
+
+        public override async Task OnCloseAsync(TimeSpan timeout)
         {
             TimeoutHelper timeoutHelper = new TimeoutHelper(timeout);
             if (this.Factory.ActAsInitiator)
             {
                 if (this.initiatorCryptoTokenProvider != null)
                 {
-                    SecurityUtils.CloseTokenProviderIfRequired(this.initiatorCryptoTokenProvider, timeoutHelper.RemainingTime());
+                    await SecurityUtils.CloseTokenProviderIfRequiredAsync(this.initiatorCryptoTokenProvider, timeoutHelper.GetCancellationToken());
                 }
                 if (this.initiatorAsymmetricTokenProvider != null)
                 {
-                    SecurityUtils.CloseTokenProviderIfRequired(this.initiatorAsymmetricTokenProvider, timeoutHelper.RemainingTime());
+                    await SecurityUtils.CloseTokenProviderIfRequiredAsync(this.initiatorAsymmetricTokenProvider, timeoutHelper.GetCancellationToken());
                 }
                 if (this.initiatorAsymmetricTokenAuthenticator != null)
                 {
-                    SecurityUtils.CloseTokenAuthenticatorIfRequired(this.initiatorAsymmetricTokenAuthenticator, timeoutHelper.RemainingTime());
+                    await SecurityUtils.CloseTokenAuthenticatorIfRequiredAsync(this.initiatorAsymmetricTokenAuthenticator, timeoutHelper.GetCancellationToken());
                 }
             }
-            base.OnClose(timeoutHelper.RemainingTime());
+            await base.OnCloseAsync(timeoutHelper.RemainingTime());
         }
 
+        /*
         protected override IAsyncResult BeginSecureOutgoingMessageCore(Message message, TimeSpan timeout, SecurityProtocolCorrelationState correlationState, AsyncCallback callback, object state)
         {
             SecurityToken encryptingToken;
@@ -180,16 +184,17 @@ namespace System.ServiceModel.Security
                 message = SecureOutgoingMessageAsyncResult.End(result, out newCorrelationState);
             }
         }
+        */
 
-        protected override SecurityProtocolCorrelationState SecureOutgoingMessageCore(ref Message message, TimeSpan timeout, SecurityProtocolCorrelationState correlationState)
+        protected override (SecurityProtocolCorrelationState, Message) SecureOutgoingMessageCore(Message message, CancellationToken token, SecurityProtocolCorrelationState correlationState)
         {
             SecurityToken encryptingToken;
             SecurityToken signingToken;
             SecurityProtocolCorrelationState newCorrelationState;
             IList<SupportingTokenSpecification> supportingTokens;
-            TryGetTokenSynchronouslyForOutgoingSecurity(message, correlationState, true, timeout, out encryptingToken, out signingToken, out supportingTokens, out newCorrelationState);
+            TryGetTokenSynchronouslyForOutgoingSecurity(message, correlationState, true, token, out encryptingToken, out signingToken, out supportingTokens, out newCorrelationState);
             SetUpDelayedSecurityExecution(ref message, encryptingToken, signingToken, supportingTokens, GetSignatureConfirmationCorrelationState(correlationState, newCorrelationState));
-            return newCorrelationState;
+            return (newCorrelationState, message);
         }
 
         void SetUpDelayedSecurityExecution(ref Message message, SecurityToken encryptingToken, SecurityToken signingToken,
@@ -238,7 +243,7 @@ namespace System.ServiceModel.Security
             security.ServiceSecurityContext = new ServiceSecurityContext(recipientAuthorizationContext, recipientTokenPolicies ?? EmptyReadOnlyCollection<IAuthorizationPolicy>.Instance);
         }
 
-        protected override SecurityProtocolCorrelationState VerifyIncomingMessageCore(ref Message message, string actor, TimeSpan timeout, SecurityProtocolCorrelationState[] correlationStates)
+        protected override async Task<(Message, SecurityProtocolCorrelationState)> VerifyIncomingMessageCoreAsync(Message message, string actor, TimeSpan timeout, SecurityProtocolCorrelationState[] correlationStates)
         {
             AsymmetricSecurityProtocolFactory factory = this.Factory;
             IList<SupportingTokenAuthenticatorSpecification> supportingAuthenticators;
@@ -251,7 +256,7 @@ namespace System.ServiceModel.Security
                 SecurityToken receiverToken = null;
                 if (factory.RequireIntegrity)
                 {
-                    receiverToken = GetToken(this.initiatorAsymmetricTokenProvider, null, timeoutHelper.RemainingTime());
+                    receiverToken = await GetTokenAsync(this.initiatorAsymmetricTokenProvider, null, timeoutHelper.GetCancellationToken());
                     requiredReplySigningToken = receiverToken;
                 }
                 if (factory.RequireConfidentiality)
@@ -282,7 +287,7 @@ namespace System.ServiceModel.Security
                 SecurityToken wrappingToken;
                 if (this.Factory.RecipientAsymmetricTokenProvider != null && this.Factory.RequireConfidentiality)
                 {
-                    wrappingToken = GetToken(factory.RecipientAsymmetricTokenProvider, null, timeoutHelper.RemainingTime());
+                    wrappingToken = await GetTokenAsync(factory.RecipientAsymmetricTokenProvider, null, timeoutHelper.GetCancellationToken());
                 }
                 else
                 {
@@ -295,7 +300,7 @@ namespace System.ServiceModel.Security
                 securityHeader.ConfigureOutOfBandTokenResolver(MergeOutOfBandResolvers(supportingAuthenticators, this.Factory.RecipientOutOfBandTokenResolverList));
             }
 
-            ProcessSecurityHeader(securityHeader, ref message, requiredReplySigningToken, timeoutHelper.RemainingTime(), correlationStates);
+            message = await ProcessSecurityHeaderAsync(securityHeader, message, requiredReplySigningToken, timeoutHelper.RemainingTime(), correlationStates);
             SecurityToken signingToken = securityHeader.SignatureToken;
             SecurityToken encryptingToken = securityHeader.EncryptionToken;
             if (factory.RequireIntegrity)
@@ -314,10 +319,12 @@ namespace System.ServiceModel.Security
                 }
             }
 
-            return GetCorrelationState(signingToken, securityHeader);
+            var state = GetCorrelationState(signingToken, securityHeader);
+
+            return (message, state);
         }
 
-        bool TryGetTokenSynchronouslyForOutgoingSecurity(Message message, SecurityProtocolCorrelationState correlationState, bool isBlockingCall, TimeSpan timeout,
+        bool TryGetTokenSynchronouslyForOutgoingSecurity(Message message, SecurityProtocolCorrelationState correlationState, bool isBlockingCall, CancellationToken cancellationToken,
             out SecurityToken encryptingToken, out SecurityToken signingToken, out IList<SupportingTokenSpecification> supportingTokens, out SecurityProtocolCorrelationState newCorrelationState)
         {
             AsymmetricSecurityProtocolFactory factory = this.Factory;
@@ -325,20 +332,25 @@ namespace System.ServiceModel.Security
             signingToken = null;
             newCorrelationState = null;
             supportingTokens = null;
-            TimeoutHelper timeoutHelper = new TimeoutHelper(timeout);
             if (factory.ActAsInitiator)
             {
-                if (!isBlockingCall || !TryGetSupportingTokens(this.Factory, this.Target, this.Via, message, timeoutHelper.RemainingTime(), isBlockingCall, out supportingTokens))
+                if (!isBlockingCall)
                 {
                     return false;
                 }
+                else
+                {
+                    supportingTokens = TryGetSupportingTokensAsync(this.Factory, this.Target, this.Via, message, cancellationToken).GetAwaiter().GetResult();
+                }
                 if (factory.ApplyConfidentiality)
                 {
-                    encryptingToken = GetTokenAndEnsureOutgoingIdentity(this.initiatorAsymmetricTokenProvider, true, timeoutHelper.RemainingTime(), this.initiatorAsymmetricTokenAuthenticator);
+                    encryptingToken = GetTokenAndEnsureOutgoingIdentityAsync(this.initiatorAsymmetricTokenProvider, true, cancellationToken, this.initiatorAsymmetricTokenAuthenticator)
+                        .GetAwaiter().GetResult();
                 }
                 if (factory.ApplyIntegrity)
                 {
-                    signingToken = GetToken(this.initiatorCryptoTokenProvider, this.Target, timeoutHelper.RemainingTime());
+                    signingToken = GetTokenAsync(this.initiatorCryptoTokenProvider, this.Target, cancellationToken)
+                        .GetAwaiter().GetResult();
                     newCorrelationState = GetCorrelationState(signingToken);
                 }
             }
@@ -350,12 +362,14 @@ namespace System.ServiceModel.Security
                 }
                 if (factory.ApplyIntegrity)
                 {
-                    signingToken = GetToken(factory.RecipientAsymmetricTokenProvider, null, timeoutHelper.RemainingTime());
+                    signingToken = GetTokenAsync(factory.RecipientAsymmetricTokenProvider, null, cancellationToken)
+                        .GetAwaiter().GetResult();
                 }
             }
             return true;
         }
 
+        /*
         sealed class SecureOutgoingMessageAsyncResult : GetTwoTokensAndSetUpSecurityAsyncResult
         {
             public SecureOutgoingMessageAsyncResult(Message m, AsymmetricSecurityProtocol binding,
@@ -374,5 +388,6 @@ namespace System.ServiceModel.Security
                 binding.SetUpDelayedSecurityExecution(ref message, primaryToken, secondaryToken, this.SupportingTokens, binding.GetSignatureConfirmationCorrelationState(OldCorrelationState, NewCorrelationState));
             }
         }
+        */
     }
 }

@@ -453,7 +453,7 @@ namespace CoreWCF.Security
             }
         }
 
-        internal async Task<IList<SupportingTokenSpecification>> TryGetSupportingTokensAsync(SecurityProtocolFactory factory, EndpointAddress target, Uri via, Message message, TimeSpan timeout)
+        internal async Task<IList<SupportingTokenSpecification>> TryGetSupportingTokensAsync(SecurityProtocolFactory factory, EndpointAddress target, Uri via, Message message, CancellationToken cancellationToken)
         {
             IList<SupportingTokenSpecification> supportingTokens = null;
             if (!factory.ActAsInitiator)
@@ -466,7 +466,6 @@ namespace CoreWCF.Security
                 throw DiagnosticUtility.ExceptionUtility.ThrowHelperArgumentNull(nameof(message));
             }
 
-            TimeoutHelper timeoutHelper = new TimeoutHelper(timeout);
             IList<SupportingTokenProviderSpecification> supportingTokenProviders = GetSupportingTokenProviders(message.Headers.Action);
             if (supportingTokenProviders != null && supportingTokenProviders.Count > 0)
             {
@@ -475,7 +474,7 @@ namespace CoreWCF.Security
                 {
                     SupportingTokenProviderSpecification spec = supportingTokenProviders[i];
                     SecurityToken supportingToken;
-                    supportingToken = await spec.TokenProvider.GetTokenAsync(timeoutHelper.GetCancellationToken());
+                    supportingToken = await spec.TokenProvider.GetTokenAsync(cancellationToken);
 
                     supportingTokens.Add(new SupportingTokenSpecification(supportingToken, EmptyReadOnlyCollection<IAuthorizationPolicy>.Instance, spec.SecurityTokenAttachmentMode, spec.TokenParameters));
                 }
@@ -548,7 +547,7 @@ namespace CoreWCF.Security
             }
         }
 
-        internal static async Task<SecurityToken> GetTokenAsync(SecurityTokenProvider provider, EndpointAddress target, TimeSpan timeout)
+        internal static async Task<SecurityToken> GetTokenAsync(SecurityTokenProvider provider, EndpointAddress target, CancellationToken cancellationToken)
         {
             if (provider == null)
             {
@@ -558,7 +557,7 @@ namespace CoreWCF.Security
             SecurityToken token;
             try
             {
-                token = await provider.GetTokenAsync(new TimeoutHelper(timeout).GetCancellationToken());
+                token = await provider.GetTokenAsync(cancellationToken);
             }
             catch (SecurityTokenException exception)
             {
@@ -631,7 +630,7 @@ namespace CoreWCF.Security
             }
             return Task.CompletedTask;
         }
-        public Task OnCloseAsync(TimeSpan timeout)
+        public virtual Task OnCloseAsync(TimeSpan timeout)
         {
             OnClosed();
             return Task.CompletedTask;

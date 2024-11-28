@@ -41,6 +41,7 @@ namespace CoreWCF.Channels
             _keyEntropyMode = SecurityKeyEntropyMode.CombinedEntropy; // AcceleratedTokenProvider.defaultKeyEntropyMode;
             IncludeTimestamp = DefaultIncludeTimestamp;
             _defaultAlgorithmSuite = s_defaultDefaultAlgorithmSuite;
+            LocalClientSettings = new LocalClientSecuritySettings();
             LocalServiceSettings = new LocalServiceSecuritySettings();
             EndpointSupportingTokenParameters = new SupportingTokenParameters();
             OptionalEndpointSupportingTokenParameters = new SupportingTokenParameters();
@@ -77,6 +78,7 @@ namespace CoreWCF.Channels
             {
                 _optionalOperationSupportingTokenParameters[key] = (SupportingTokenParameters)elementToBeCloned._optionalOperationSupportingTokenParameters[key].Clone();
             }
+            LocalClientSettings = (LocalClientSecuritySettings)elementToBeCloned.LocalClientSettings.Clone();
             LocalServiceSettings = (LocalServiceSecuritySettings)elementToBeCloned.LocalServiceSettings.Clone();
             // this.internalDuplexBindingElement = elementToBeCloned.internalDuplexBindingElement;
             MaxReceivedMessageSize = elementToBeCloned.MaxReceivedMessageSize;
@@ -158,6 +160,8 @@ namespace CoreWCF.Channels
         }
 
         public bool ProtectTokens { get; set; } = DefaultProtectTokens;
+
+        public LocalClientSecuritySettings LocalClientSettings { get; }
 
         public LocalServiceSecuritySettings LocalServiceSettings { get; }
 

@@ -1,22 +1,19 @@
-//-----------------------------------------------------------------------------
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-//-----------------------------------------------------------------------------
-namespace System.ServiceModel.Channels
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System;
+using System.Globalization;
+using System.Net.Security;
+using System.Text;
+using CoreWCF.Configuration;
+using CoreWCF.Description;
+using CoreWCF.Dispatcher;
+using CoreWCF.Security;
+using CoreWCF.Security.Tokens;
+
+namespace CoreWCF.Channels
 {
-    using System;
-    using System.ServiceModel.Description;
-    using System.Xml;
-    using System.Collections.Generic;
-    using System.Globalization;
-    using System.Runtime.Serialization;
-    using System.ServiceModel;
-    using System.ServiceModel.Security;
-    using System.ServiceModel.Security.Tokens;
-
-    using System.Net.Security;
-    using System.Text;
-
-    public sealed class AsymmetricSecurityBindingElement : SecurityBindingElement, IPolicyExportExtension
+    public sealed class AsymmetricSecurityBindingElement : SecurityBindingElement //, IPolicyExportExtension
     {
         internal const bool defaultAllowSerializedSigningTokenOnReply = false;
 
@@ -27,7 +24,7 @@ namespace System.ServiceModel.Channels
         bool requireSignatureConfirmation;
         bool isCertificateSignatureBinding;
 
-        AsymmetricSecurityBindingElement(AsymmetricSecurityBindingElement elementToBeCloned)
+        private AsymmetricSecurityBindingElement(AsymmetricSecurityBindingElement elementToBeCloned)
             : base(elementToBeCloned)
         {
             if (elementToBeCloned.initiatorTokenParameters != null)
@@ -64,8 +61,8 @@ namespace System.ServiceModel.Channels
             bool allowSerializedSigningTokenOnReply)
             : base()
         {
-            this.messageProtectionOrder = SecurityBindingElement.defaultMessageProtectionOrder;
-            this.requireSignatureConfirmation = SecurityBindingElement.defaultRequireSignatureConfirmation;
+            this.messageProtectionOrder = SecurityBindingElement.DefaultMessageProtectionOrder;
+            this.requireSignatureConfirmation = SecurityBindingElement.DefaultRequireSignatureConfirmation;
             this.initiatorTokenParameters = initiatorTokenParameters;
             this.recipientTokenParameters = recipientTokenParameters;
             this.allowSerializedSigningTokenOnReply = allowSerializedSigningTokenOnReply;
@@ -191,6 +188,7 @@ namespace System.ServiceModel.Channels
                 this.recipientTokenParameters.RequireDerivedKeys = requireDerivedKeys;
         }
 
+        /*
         internal override bool IsSetKeyDerivation(bool requireDerivedKeys)
         {
             if (!base.IsSetKeyDerivation(requireDerivedKeys))
@@ -201,6 +199,7 @@ namespace System.ServiceModel.Channels
                 return false;
             return true;
         }
+        */
 
         bool HasProtectionRequirements(ScopedMessagePartSpecification scopedParts)
         {
@@ -226,9 +225,9 @@ namespace System.ServiceModel.Channels
                 throw DiagnosticUtility.ExceptionUtility.ThrowHelperArgumentNull("credentialsManager");
 
             if (this.InitiatorTokenParameters == null)
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.GetString(SR.AsymmetricSecurityBindingElementNeedsInitiatorTokenParameters, this.ToString())));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.Format(SR.AsymmetricSecurityBindingElementNeedsInitiatorTokenParameters, this.ToString())));
             if (this.RecipientTokenParameters == null)
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.GetString(SR.AsymmetricSecurityBindingElementNeedsRecipientTokenParameters, this.ToString())));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.Format(SR.AsymmetricSecurityBindingElementNeedsRecipientTokenParameters, this.ToString())));
 
             bool isDuplexSecurity = !this.isCertificateSignatureBinding && (typeof(IDuplexChannel) == typeof(TChannel) || typeof(IDuplexSessionChannel) == typeof(TChannel));
 
@@ -256,7 +255,7 @@ namespace System.ServiceModel.Channels
             }
             if (isForService)
             {
-                base.ApplyAuditBehaviorSettings(context, forward);
+                //base.ApplyAuditBehaviorSettings(context, forward);
                 if (forward.RequireConfidentiality || (!this.isCertificateSignatureBinding && forward.ApplyIntegrity))
                 {
                     forward.AsymmetricTokenParameters = (SecurityTokenParameters)this.RecipientTokenParameters.Clone();
@@ -309,6 +308,8 @@ namespace System.ServiceModel.Channels
 
             if (isDuplexSecurity)
             {
+                throw new NotSupportedException();
+                /*
                 AsymmetricSecurityProtocolFactory reverse = new AsymmetricSecurityProtocolFactory();
                 if (isForService)
                 {
@@ -356,6 +357,7 @@ namespace System.ServiceModel.Channels
                 duplex.ForwardProtocolFactory = forward;
                 duplex.ReverseProtocolFactory = reverse;
                 protocolFactory = duplex;
+                */
             }
             else
             {
@@ -370,6 +372,7 @@ namespace System.ServiceModel.Channels
             return (base.RequiresChannelDemuxer() || RequiresChannelDemuxer(this.InitiatorTokenParameters));
         }
 
+        /*
         protected override IChannelFactory<TChannel> BuildChannelFactoryCore<TChannel>(BindingContext context)
         {
             ISecurityCapabilities securityCapabilities = this.GetProperty<ISecurityCapabilities>(context);
@@ -392,9 +395,11 @@ namespace System.ServiceModel.Channels
 
             return new SecurityChannelFactory<TChannel>(securityCapabilities, context, channelBuilder, protocolFactory);
         }
+        */
 
-        protected override IChannelListener<TChannel> BuildChannelListenerCore<TChannel>(BindingContext context)
+        protected override IServiceDispatcher BuildServiceDispatcherCore<TChannel>(BindingContext context, IServiceDispatcher serviceDispatcher)
         {
+            SecurityServiceDispatcher securityServiceDispatcher = new SecurityServiceDispatcher(context, serviceDispatcher);
             bool requireDemuxer = RequiresChannelDemuxer();
             ChannelBuilder channelBuilder = new ChannelBuilder(context, requireDemuxer);
             if (requireDemuxer)
@@ -403,16 +408,17 @@ namespace System.ServiceModel.Channels
             }
             BindingContext issuerBindingContext = context.Clone();
 
-            SecurityChannelListener<TChannel> channelListener = new SecurityChannelListener<TChannel>(this, context);
             SecurityCredentialsManager credentialsManager = context.BindingParameters.Find<SecurityCredentialsManager>();
             if (credentialsManager == null)
                 credentialsManager = ServiceCredentials.CreateDefaultCredentials();
 
             SecurityProtocolFactory protocolFactory = this.CreateSecurityProtocolFactory<TChannel>(context, credentialsManager, true, issuerBindingContext);
-            channelListener.SecurityProtocolFactory = protocolFactory;
-            channelListener.InitializeListener(channelBuilder);
+            securityServiceDispatcher.SecurityProtocolFactory = protocolFactory;
+            securityServiceDispatcher.InitializeSecurityDispatcher(channelBuilder, typeof(TChannel));
 
-            return channelListener;
+            //return channelListener;
+            channelBuilder.BuildServiceDispatcher<TChannel>(context, securityServiceDispatcher);
+            return securityServiceDispatcher;
         }
 
         public override T GetProperty<T>(BindingContext context)
@@ -466,9 +472,11 @@ namespace System.ServiceModel.Channels
             return new AsymmetricSecurityBindingElement(this);
         }
 
+        /*
         void IPolicyExportExtension.ExportPolicy(MetadataExporter exporter, PolicyConversionContext context)
         {
             SecurityBindingElement.ExportPolicy(exporter, context);
         }
+        */
     }
 }
