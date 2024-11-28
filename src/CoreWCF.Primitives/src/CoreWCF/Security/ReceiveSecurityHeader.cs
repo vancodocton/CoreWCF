@@ -406,6 +406,23 @@ namespace CoreWCF.Security
             _supportingTokenAuthenticators = supportingTokenAuthenticators;
         }
 
+        public void ConfigureAsymmetricBindingClientReceiveHeader(SecurityToken primaryToken, SecurityTokenParameters primaryTokenParameters, SecurityToken encryptionToken, SecurityTokenParameters encryptionTokenParameters, SecurityTokenAuthenticator primaryTokenAuthenticator)
+        {
+            this.outOfBandPrimaryToken = primaryToken;
+            this.primaryTokenParameters = primaryTokenParameters;
+            this.primaryTokenAuthenticator = primaryTokenAuthenticator;
+            this.allowFirstTokenMismatch = primaryTokenAuthenticator != null;
+            if (encryptionToken != null && !SecurityUtils.HasSymmetricSecurityKey(encryptionToken))
+            {
+                this.wrappingToken = encryptionToken;
+                this.wrappingTokenParameters = encryptionTokenParameters;
+            }
+            else
+            {
+                this.expectedEncryptionToken = encryptionToken;
+                this.expectedEncryptionTokenParameters = encryptionTokenParameters;
+            }
+        }
 
 
         public void ConfigureSymmetricBindingClientReceiveHeader(SecurityToken primaryToken, SecurityTokenParameters primaryTokenParameters)

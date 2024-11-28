@@ -831,6 +831,68 @@ namespace CoreWCF.Channels
             return result;
         }
 
+        internal static ChannelProtectionRequirements ComputeProtectionRequirements(SecurityBindingElement security, BindingParameterCollection parameterCollection, BindingElementCollection bindingElements, bool isForService)
+        {
+            if (parameterCollection == null)
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperArgumentNull("parameterCollection");
+            if (bindingElements == null)
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperArgumentNull("bindingElements");
+            if (security == null)
+            {
+                return null;
+            }
+
+            ChannelProtectionRequirements result = null;
+            if ((security is SymmetricSecurityBindingElement) || (security is AsymmetricSecurityBindingElement))
+            {
+                result = new ChannelProtectionRequirements();
+                ChannelProtectionRequirements contractRequirements = parameterCollection.Find<ChannelProtectionRequirements>();
+
+                if (contractRequirements != null)
+                    result.Add(contractRequirements);
+
+                AddBindingProtectionRequirements(result, bindingElements, !isForService);
+            }
+
+            return result;
+        }
+
+        static void AddBindingProtectionRequirements(ChannelProtectionRequirements requirements, BindingElementCollection bindingElements, bool isForChannel)
+        {
+            // Gather custom requirements from bindingElements
+            CustomBinding binding = new CustomBinding(bindingElements);
+            BindingContext context = new BindingContext(binding, new BindingParameterCollection());
+            // In theory, we can just do 
+            //     context.GetInnerProperty<ChannelProtectionRequirements>()
+            // but that relies on each binding element to correctly union-up its own requirements with
+            // those of the rest of the stack.  So instead, we ask each BE individually, and we do the 
+            // work of combining the results.  This protects us against this scenario: someone authors "FooBE"
+            // with a a GetProperty implementation that always returns null (oops), and puts FooBE on the 
+            // top of the stack, and so FooBE "hides" important protection requirements that inner BEs
+            // require, resulting in an insecure binding.
+            foreach (BindingElement bindingElement in bindingElements)
+            {
+                if (bindingElement != null)
+                {
+                    // ask each element individually for its requirements
+                    context.RemainingBindingElements.Clear();
+                    context.RemainingBindingElements.Add(bindingElement);
+                    ChannelProtectionRequirements s = context.GetInnerProperty<ChannelProtectionRequirements>();
+                    if (s != null)
+                    {
+                        //if (isForChannel)
+                        //{
+                        //    requirements.Add(s.CreateInverse());
+                        //}
+                        //else
+                        //{
+                        requirements.Add(s);
+                        //}
+                    }
+                }
+            }
+        }
+
         //TODO other security mode
 
         public static void ExportPolicyForTransportTokenAssertionProviders(MetadataExporter exporter, PolicyConversionContext context)
