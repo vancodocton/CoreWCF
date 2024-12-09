@@ -2,7 +2,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Net.Security;
 using CoreWCF.Channels;
+using CoreWCF.Security;
 
 namespace CoreWCF.Description
 {
@@ -10,6 +12,9 @@ namespace CoreWCF.Description
     {
         private static Type s_typeOfUntypedMessage;
         private MessageDescriptionItems _items;
+
+        ProtectionLevel protectionLevel;
+        bool hasProtectionLevel;
 
         //XmlQualifiedName xsdType;
 
@@ -42,6 +47,8 @@ namespace CoreWCF.Description
             }
             MessageName = other.MessageName;
             MessageType = other.MessageType;
+            this.hasProtectionLevel = other.hasProtectionLevel;
+            this.ProtectionLevel = other.ProtectionLevel;
         }
 
         public MessageDescription Clone()
@@ -81,7 +88,27 @@ namespace CoreWCF.Description
             }
         }
 
-        internal bool HasProtectionLevel => false;
+        public ProtectionLevel ProtectionLevel
+        {
+            get { return this.protectionLevel; }
+            set
+            {
+                if (!ProtectionLevelHelper.IsDefined(value))
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new ArgumentOutOfRangeException("value"));
+                this.protectionLevel = value;
+                this.hasProtectionLevel = true;
+            }
+        }
+
+        public bool ShouldSerializeProtectionLevel()
+        {
+            return this.HasProtectionLevel;
+        }
+
+        public bool HasProtectionLevel
+        {
+            get { return this.hasProtectionLevel; }
+        }
 
         internal static Type TypeOfUntypedMessage
         {

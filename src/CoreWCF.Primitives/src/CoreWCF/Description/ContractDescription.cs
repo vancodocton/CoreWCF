@@ -3,7 +3,9 @@
 
 using System;
 using System.Collections.ObjectModel;
+using System.Net.Security;
 using CoreWCF.Collections.Generic;
+using CoreWCF.Security;
 
 namespace CoreWCF.Description
 {
@@ -13,8 +15,8 @@ namespace CoreWCF.Description
         private string _ns;
         private SessionMode _sessionMode;
 
-        //ProtectionLevel protectionLevel;
-        //bool hasProtectionLevel;
+        ProtectionLevel protectionLevel;
+        bool hasProtectionLevel;
 
 
         public ContractDescription(string name)
@@ -76,7 +78,27 @@ namespace CoreWCF.Description
 
         public OperationDescriptionCollection Operations { get; }
 
-        internal bool HasProtectionLevel => false;
+        public ProtectionLevel ProtectionLevel
+        {
+            get { return this.protectionLevel; }
+            set
+            {
+                if (!ProtectionLevelHelper.IsDefined(value))
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new ArgumentOutOfRangeException("value"));
+                this.protectionLevel = value;
+                this.hasProtectionLevel = true;
+            }
+        }
+
+        public bool ShouldSerializeProtectionLevel()
+        {
+            return this.HasProtectionLevel;
+        }
+
+        public bool HasProtectionLevel
+        {
+            get { return this.hasProtectionLevel; }
+        }
 
         public SessionMode SessionMode
         {

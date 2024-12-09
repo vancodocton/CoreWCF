@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics.Contracts;
 using System.Linq;
+using System.Net.Security;
 using System.Reflection;
 using CoreWCF.Runtime;
 
@@ -136,6 +137,7 @@ namespace CoreWCF.Description
             sca.Namespace = GetProperty<string>(attr, nameof(ServiceContractAttribute.Namespace));
             sca.SessionMode = GetProperty<SessionMode>(attr, nameof(ServiceContractAttribute.SessionMode));
             sca.CallbackContract = GetProperty<Type>(attr, nameof(ServiceContractAttribute.CallbackContract));
+            sca.ProtectionLevel = GetProperty<ProtectionLevel>(attr, nameof(ServiceContractAttribute.ProtectionLevel));
             return sca;
         }
 

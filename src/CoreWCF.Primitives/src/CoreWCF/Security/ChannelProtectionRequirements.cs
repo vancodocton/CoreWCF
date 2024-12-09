@@ -171,11 +171,10 @@ namespace CoreWCF.Security
 
             ProtectionLevel contractScopeDefaultRequestProtectionLevel = ProtectionLevel.None;
             ProtectionLevel contractScopeDefaultResponseProtectionLevel = ProtectionLevel.None;
-            if (contract.HasProtectionLevel) // Currently always false
+            if (contract.HasProtectionLevel)
             {
-                throw new PlatformNotSupportedException(nameof(ContractDescription.HasProtectionLevel));
-                //contractScopeDefaultRequestProtectionLevel = contract.ProtectionLevel;
-                //contractScopeDefaultResponseProtectionLevel = contract.ProtectionLevel;
+                contractScopeDefaultRequestProtectionLevel = contract.ProtectionLevel;
+                contractScopeDefaultResponseProtectionLevel = contract.ProtectionLevel;
             }
             else
             {
@@ -302,8 +301,7 @@ namespace CoreWCF.Security
         private static void AddHeaderProtectionRequirements(MessageHeaderDescription header, MessagePartSpecification signedParts,
             MessagePartSpecification encryptedParts, ProtectionLevel defaultProtectionLevel)
         {
-            ProtectionLevel p = defaultProtectionLevel; //header.HasProtectionLevel currently is always false;
-            //ProtectionLevel p = header.HasProtectionLevel ? header.ProtectionLevel : defaultProtectionLevel;
+            ProtectionLevel p = header.HasProtectionLevel ? header.ProtectionLevel : defaultProtectionLevel;
 
             if (p != ProtectionLevel.None)
             {

@@ -778,10 +778,10 @@ namespace CoreWCF.Description
             };
 
             // MessageSecurity not supported
-            //if (contractAttr.HasProtectionLevel)
-            //{
-            //    contractDescription.ProtectionLevel = contractAttr.ProtectionLevel;
-            //}
+            if (contractAttr.HasProtectionLevel)
+            {
+                contractDescription.ProtectionLevel = contractAttr.ProtectionLevel;
+            }
 
             Type callbackType = contractAttr.CallbackContract;
 

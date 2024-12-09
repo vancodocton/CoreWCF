@@ -2,7 +2,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Net.Security;
 using CoreWCF.Description;
+using CoreWCF.Security;
 
 namespace CoreWCF
 {
@@ -13,6 +15,8 @@ namespace CoreWCF
         private string _name;
         private string _ns;
         private SessionMode _sessionMode;
+        private ProtectionLevel _protectionLevel = ProtectionLevel.None;
+        private bool _hasProtectionLevel = false;
 
         public string ConfigurationName
         {
@@ -62,6 +66,26 @@ namespace CoreWCF
 
                 _ns = value;
             }
+        }
+
+        public ProtectionLevel ProtectionLevel
+        {
+            get
+            {
+                return this._protectionLevel;
+            }
+            set
+            {
+                if (!ProtectionLevelHelper.IsDefined(value))
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new ArgumentOutOfRangeException(nameof(value)));
+                this._protectionLevel = value;
+                this._hasProtectionLevel = true;
+            }
+        }
+
+        public bool HasProtectionLevel
+        {
+            get { return this._hasProtectionLevel; }
         }
 
         public SessionMode SessionMode
