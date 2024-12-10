@@ -2,8 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using CoreWCF.Configuration;
+using CoreWCF.Description;
+using CoreWCF.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -98,10 +101,8 @@ namespace CoreWCF.Channels
                         continue; // Not an HTTP(S) dispatcher
                     }
 
-                    var parameters = new BindingParameterCollection
-                    {
-                        _app
-                    };
+                    var parameters = GetBindingParameters(dispatcher.Host, dispatcher.Host.Description.Endpoints);
+                    parameters.Add(_app);
                     IServiceDispatcher serviceDispatcher = null;
                     System.Collections.Generic.IList<Type> supportedChannels = dispatcher.SupportedChannelTypes;
                     for (int i = 0; i < supportedChannels.Count; i++)
@@ -184,7 +185,9 @@ namespace CoreWCF.Channels
                 }
             }
 
-            branchApp.Use(_ => { return reqContext =>
+            branchApp.Use(_ =>
+            {
+                return reqContext =>
             {
                 if (reqContext.Items.TryGetValue(RestorePathsDelegateItemName, out object restorePathsDelegateAsObject))
                 {
@@ -196,8 +199,84 @@ namespace CoreWCF.Channels
                 }
 
                 return _next(reqContext);
-            }; });
+            };
+            });
             return branchApp.Build();
+        }
+
+        private BindingParameterCollection GetBindingParameters(ServiceHostBase serviceHost, Collection<ServiceEndpoint> endpoints)
+        {
+            BindingParameterCollection parameters = new BindingParameterCollection();
+            foreach (IServiceBehavior behavior in serviceHost.Description.Behaviors)
+            {
+                behavior.AddBindingParameters(serviceHost.Description, serviceHost, endpoints, parameters);
+            }
+
+            foreach (ServiceEndpoint endpoint in endpoints)
+            {
+                AddBindingParametersForSecurityContractInformation(endpoint, parameters);
+                foreach (IContractBehavior icb in endpoint.Contract.ContractBehaviors)
+                {
+                    icb.AddBindingParameters(endpoint.Contract, endpoint, parameters);
+                }
+
+                foreach (IEndpointBehavior ieb in endpoint.EndpointBehaviors)
+                {
+                    ieb.AddBindingParameters(endpoint, parameters);
+                }
+
+                foreach (OperationDescription op in endpoint.Contract.Operations)
+                {
+                    foreach (IOperationBehavior iob in op.OperationBehaviors)
+                    {
+                        iob.AddBindingParameters(op, parameters);
+                    }
+                }
+            }
+
+            return parameters;
+        }
+
+        internal static void AddBindingParametersForSecurityContractInformation(ServiceEndpoint endpoint, BindingParameterCollection parameters)
+        {
+            // get Contract info security needs, and put in BindingParameterCollection
+            ISecurityCapabilities isc = null;
+            BindingElementCollection elements = endpoint.Binding.CreateBindingElements();
+            for (int i = 0; i < elements.Count; ++i)
+            {
+                if (!(elements[i] is ITransportTokenAssertionProvider))
+                {
+                    ISecurityCapabilities tmp = elements[i].GetProperty<ISecurityCapabilities>(new BindingContext(new CustomBinding(), new BindingParameterCollection()));
+                    if (tmp != null)
+                    {
+                        isc = tmp;
+                        break;
+                    }
+                }
+            }
+
+            if (isc != null)
+            {
+                // ensure existence of binding parameter
+                ChannelProtectionRequirements requirements = parameters.Find<ChannelProtectionRequirements>();
+                if (requirements == null)
+                {
+                    requirements = new ChannelProtectionRequirements();
+                    parameters.Add(requirements);
+                }
+
+                MessageEncodingBindingElement encoding = elements.Find<MessageEncodingBindingElement>();
+                // use endpoint.Binding.Version
+                if (encoding != null && encoding.MessageVersion.Addressing == AddressingVersion.None)
+                {
+                    // This binding does not support response actions, so...
+                    requirements.Add(ChannelProtectionRequirements.CreateFromContractAndUnionResponseProtectionRequirements(endpoint.Contract, isc));
+                }
+                else
+                {
+                    requirements.Add(ChannelProtectionRequirements.CreateFromContract(endpoint.Contract, isc));
+                }
+            }
         }
     }
 }
