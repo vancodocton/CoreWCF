@@ -21,6 +21,7 @@ namespace CoreWCF.Security
     internal class WSSecurityOneDotZeroReceiveSecurityHeader : ReceiveSecurityHeader
     {
         private KeyedHashAlgorithm _signingKey;
+        private SignedXml pendingSignature;
         private const string SIGNED_XML_HEADER = "signed_xml_header";
         public WSSecurityOneDotZeroReceiveSecurityHeader(Message message, string actor, bool mustUnderstand, bool relay,
             SecurityStandardsManager standardsManager,
@@ -83,6 +84,43 @@ namespace CoreWCF.Security
             throw new PlatformNotSupportedException();
         }
 
+        bool EnsureDigestValidityIfIdMatches(
+            SignedInfo signedInfo,
+            string id, XmlDictionaryReader reader, bool doSoapAttributeChecks,
+            MessagePartSpecification signatureParts, MessageHeaderInfo info, bool checkForTokensAtHeaders)
+        {
+            if (signedInfo == null)
+            {
+                return false;
+            }
+            if (doSoapAttributeChecks)
+            {
+                VerifySoapAttributeMatchForHeader(info, signatureParts, reader);
+            }
+
+            bool signed = false;
+            bool isRecognizedSecurityToken = checkForTokensAtHeaders && this.StandardsManager.SecurityTokenSerializer.CanReadToken(reader);
+
+            try
+            {
+                signed = signedInfo.EnsureDigestValidityIfIdMatches(id, reader);
+            }
+            catch (CryptographicException exception)
+            {
+                //
+                // Wrap the crypto exception here so that the perf couter can be updated correctly
+                //
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.FailedSignatureVerification), exception));
+            }
+
+            if (signed && isRecognizedSecurityToken)
+            {
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.SecurityTokenFoundOutsideSecurityHeader, info.Namespace, info.Name)));
+            }
+
+            return signed;
+        }
+
         protected override void OnDecryptionOfSecurityHeaderItemRequiringReferenceListEntry(string id)
         {
             throw new PlatformNotSupportedException();
@@ -90,7 +128,209 @@ namespace CoreWCF.Security
 
         protected override void ExecuteMessageProtectionPass(bool hasAtLeastOneSupportingTokenExpectedToBeSigned)
         {
-            throw new PlatformNotSupportedException();
+            SignatureTargetIdManager idManager = this.StandardsManager.IdManager;
+            MessagePartSpecification encryptionParts = this.RequiredEncryptionParts ?? MessagePartSpecification.NoParts;
+            MessagePartSpecification signatureParts = this.RequiredSignatureParts ?? MessagePartSpecification.NoParts;
+
+            bool checkForTokensAtHeaders = hasAtLeastOneSupportingTokenExpectedToBeSigned;
+            bool doSoapAttributeChecks = !signatureParts.IsBodyIncluded;
+            bool encryptBeforeSign = this.EncryptBeforeSignMode;
+            SignedInfo signedInfo = this.pendingSignature != null ? this.pendingSignature.Signature.SignedInfo : null;
+
+            SignatureConfirmations signatureConfirmations = this.GetSentSignatureConfirmations();
+            if (signatureConfirmations != null && signatureConfirmations.Count > 0 && signatureConfirmations.IsMarkedForEncryption)
+            {
+                // If Signature Confirmations are encrypted then the signature should
+                // be encrypted as well.
+                this.VerifySignatureEncryption();
+            }
+
+            MessageHeaders headers = this.SecurityVerifiedMessage.Headers;
+            XmlDictionaryReader reader = this.SecurityVerifiedMessage.GetReaderAtFirstHeader();
+
+            bool atLeastOneHeaderOrBodyEncrypted = false;
+
+            for (int i = 0; i < headers.Count; i++)
+            {
+                if (reader.NodeType != XmlNodeType.Element)
+                {
+                    reader.MoveToContent();
+                }
+
+                if (i == this.HeaderIndex)
+                {
+                    reader.Skip();
+                    continue;
+                }
+
+                bool isHeaderEncrypted = false;
+
+                string id = idManager.ExtractId(reader);
+
+                if (id != null)
+                {
+                    isHeaderEncrypted = TryDeleteReferenceListEntry(id);
+                }
+
+                if (!isHeaderEncrypted && reader.IsStartElement(SecurityXXX2005Strings.EncryptedHeader, SecurityXXX2005Strings.Namespace))
+                {
+                    XmlDictionaryReader localreader = headers.GetReaderAtHeader(i);
+                    localreader.ReadStartElement(SecurityXXX2005Strings.EncryptedHeader, SecurityXXX2005Strings.Namespace);
+
+                    if (localreader.IsStartElement(EncryptedData.ElementName, XD.XmlEncryptionDictionary.Namespace))
+                    {
+                        string encryptedDataId = localreader.GetAttribute(XD.XmlEncryptionDictionary.Id, null);
+
+                        if (encryptedDataId != null && TryDeleteReferenceListEntry(encryptedDataId))
+                        {
+                            isHeaderEncrypted = true;
+                        }
+                    }
+                }
+
+                this.ElementManager.VerifyUniquenessAndSetHeaderId(id, i);
+
+                MessageHeaderInfo info = headers[i];
+
+                if (!isHeaderEncrypted && encryptionParts.IsHeaderIncluded(info.Name, info.Namespace))
+                {
+                    this.SecurityVerifiedMessage.OnUnencryptedPart(info.Name, info.Namespace);
+                }
+
+                bool headerSigned;
+                if ((!isHeaderEncrypted || encryptBeforeSign) && id != null)
+                {
+                    headerSigned = EnsureDigestValidityIfIdMatches(signedInfo, id, reader, doSoapAttributeChecks, signatureParts, info, checkForTokensAtHeaders);
+                }
+                else
+                {
+                    headerSigned = false;
+                }
+
+                if (isHeaderEncrypted)
+                {
+                    XmlDictionaryReader decryptionReader = headerSigned ? headers.GetReaderAtHeader(i) : reader;
+                    DecryptedHeader decryptedHeader = DecryptHeader(decryptionReader, this.pendingDecryptionToken);
+                    info = decryptedHeader;
+                    id = decryptedHeader.Id;
+                    this.ElementManager.VerifyUniquenessAndSetDecryptedHeaderId(id, i);
+                    headers.ReplaceAt(i, decryptedHeader);
+                    if (!ReferenceEquals(decryptionReader, reader))
+                    {
+                        decryptionReader.Close();
+                    }
+
+                    if (!encryptBeforeSign && id != null)
+                    {
+                        XmlDictionaryReader decryptedHeaderReader = decryptedHeader.GetHeaderReader();
+                        headerSigned = EnsureDigestValidityIfIdMatches(signedInfo, id, decryptedHeaderReader, doSoapAttributeChecks, signatureParts, info, checkForTokensAtHeaders);
+                        decryptedHeaderReader.Close();
+                    }
+                }
+
+                if (!headerSigned && signatureParts.IsHeaderIncluded(info.Name, info.Namespace))
+                {
+                    this.SecurityVerifiedMessage.OnUnsignedPart(info.Name, info.Namespace);
+                }
+
+                if (headerSigned && isHeaderEncrypted)
+                {
+                    // We have a header that is signed and encrypted. So the accompanying primary signature
+                    // should be encrypted as well.
+                    this.VerifySignatureEncryption();
+                }
+
+                if (isHeaderEncrypted && !headerSigned)
+                {
+                    // We require all encrypted headers (outside the security header) to be signed.
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.EncryptedHeaderNotSigned, info.Name, info.Namespace)));
+                }
+
+                if (!headerSigned && !isHeaderEncrypted)
+                {
+                    reader.Skip();
+                }
+
+                atLeastOneHeaderOrBodyEncrypted |= isHeaderEncrypted;
+            }
+
+            reader.ReadEndElement();
+
+            if (reader.NodeType != XmlNodeType.Element)
+            {
+                reader.MoveToContent();
+            }
+
+            string bodyId = idManager.ExtractId(reader);
+            this.ElementManager.VerifyUniquenessAndSetBodyId(bodyId);
+            this.SecurityVerifiedMessage.SetBodyPrefixAndAttributes(reader);
+
+            bool expectBodyEncryption = encryptionParts.IsBodyIncluded || HasPendingDecryptionItem();
+
+            bool bodySigned;
+            if ((!expectBodyEncryption || encryptBeforeSign) && bodyId != null)
+            {
+                bodySigned = EnsureDigestValidityIfIdMatches(signedInfo, bodyId, reader, false, null, null, false);
+            }
+            else
+            {
+                bodySigned = false;
+            }
+
+            bool bodyEncrypted;
+            if (expectBodyEncryption)
+            {
+                XmlDictionaryReader bodyReader = bodySigned ? this.SecurityVerifiedMessage.CreateFullBodyReader() : reader;
+                bodyReader.ReadStartElement();
+                string bodyContentId = idManager.ExtractId(bodyReader);
+                this.ElementManager.VerifyUniquenessAndSetBodyContentId(bodyContentId);
+                bodyEncrypted = bodyContentId != null && TryDeleteReferenceListEntry(bodyContentId);
+                if (bodyEncrypted)
+                {
+                    DecryptBody(bodyReader, this.pendingDecryptionToken);
+                }
+                if (!ReferenceEquals(bodyReader, reader))
+                {
+                    bodyReader.Close();
+                }
+                if (!encryptBeforeSign && signedInfo != null && signedInfo.HasUnverifiedReference(bodyId))
+                {
+                    bodyReader = this.SecurityVerifiedMessage.CreateFullBodyReader();
+                    bodySigned = EnsureDigestValidityIfIdMatches(signedInfo, bodyId, bodyReader, false, null, null, false);
+                    bodyReader.Close();
+                }
+            }
+            else
+            {
+                bodyEncrypted = false;
+            }
+
+            if (bodySigned && bodyEncrypted)
+            {
+                this.VerifySignatureEncryption();
+            }
+
+            reader.Close();
+
+            if (this.pendingSignature != null)
+            {
+                this.pendingSignature.CompleteSignatureVerification();
+                this.pendingSignature = null;
+            }
+            this.pendingDecryptionToken = null;
+            atLeastOneHeaderOrBodyEncrypted |= bodyEncrypted;
+
+            if (!bodySigned && signatureParts.IsBodyIncluded)
+            {
+                this.SecurityVerifiedMessage.OnUnsignedPart(XD.MessageDictionary.Body.Value, this.Version.Envelope.Namespace);
+            }
+
+            if (!bodyEncrypted && encryptionParts.IsBodyIncluded)
+            {
+                this.SecurityVerifiedMessage.OnUnencryptedPart(XD.MessageDictionary.Body.Value, this.Version.Envelope.Namespace);
+            }
+
+            this.SecurityVerifiedMessage.OnMessageProtectionPassComplete(atLeastOneHeaderOrBodyEncrypted);
         }
 
         protected override ReferenceList ReadReferenceListCore(XmlDictionaryReader reader)
