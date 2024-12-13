@@ -111,7 +111,27 @@ namespace CoreWCF.IdentityModel.Tokens
 
         public override byte[] EncryptKey(string algorithm, byte[] keyData)
         {
-            throw new PlatformNotSupportedException();
+            // Ensure that we have an RSA algorithm object
+            RSA rsa = this.PublicKey as RSA;
+            if (rsa == null)
+            {
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new NotSupportedException(SR.PublicKeyNotRSA));
+            }
+
+            switch (algorithm)
+            {
+                case EncryptedXml.XmlEncRSA15Url:
+                    return EncryptedXml.EncryptKey(keyData, rsa, false);
+
+                case EncryptedXml.XmlEncRSAOAEPUrl:
+                    return EncryptedXml.EncryptKey(keyData, rsa, true);
+
+                default:
+                    if (IsSupportedAlgorithm(algorithm))
+                        return EncryptedXml.EncryptKey(keyData, rsa, true);
+
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new NotSupportedException(SR.Format(SR.UnsupportedCryptoAlgorithm, algorithm)));
+            }
         }
 
         public override AsymmetricAlgorithm GetAsymmetricAlgorithm(string algorithm, bool privateKey)

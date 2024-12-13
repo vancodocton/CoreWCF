@@ -122,7 +122,23 @@ namespace CoreWCF.Security
 
         internal static byte[] EncryptKey(SecurityToken wrappingToken, string wrappingAlgorithm, byte[] keyToWrap)
         {
-            throw new PlatformNotSupportedException();
+            SecurityKey wrappingSecurityKey = null;
+            if (wrappingToken.SecurityKeys != null)
+            {
+                for (int i = 0; i < wrappingToken.SecurityKeys.Count; ++i)
+                {
+                    if (wrappingToken.SecurityKeys[i].IsSupportedAlgorithm(wrappingAlgorithm))
+                    {
+                        wrappingSecurityKey = wrappingToken.SecurityKeys[i];
+                        break;
+                    }
+                }
+            }
+            if (wrappingSecurityKey == null)
+            {
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperArgument(SR.Format(SR.CannotFindMatchingCrypto, wrappingAlgorithm));
+            }
+            return wrappingSecurityKey.EncryptKey(wrappingAlgorithm, keyToWrap);
         }
 
         private static string s_currentDomain;
@@ -183,7 +199,19 @@ namespace CoreWCF.Security
             }
         }
 
-    
+        internal static SymmetricAlgorithm GetSymmetricAlgorithm(string algorithm, SecurityToken token)
+        {
+            SymmetricSecurityKey securityKey = SecurityUtils.GetSecurityKey<SymmetricSecurityKey>(token);
+            if (securityKey != null && securityKey.IsSupportedAlgorithm(algorithm))
+            {
+                return securityKey.GetSymmetricAlgorithm(algorithm);
+            }
+            else
+            {
+                return null;
+            }
+        }
+
 
         internal static ReadOnlyCollection<SecurityKey> CreateSymmetricSecurityKeys(byte[] key)
         {

@@ -28,6 +28,10 @@ namespace CoreWCF.Security
         private KeyedHashAlgorithm _signingKey;
         private MessagePartSpecification _effectiveSignatureParts;
 
+        SymmetricAlgorithm encryptingSymmetricAlgorithm;
+        ReferenceList referenceList;
+        SecurityKeyIdentifier encryptionKeyIdentifier;
+
         // For Transport Security we have to sign the 'To' header with the 
         // supporting tokens.
         private Stream _toHeaderStream = null;
@@ -623,7 +627,14 @@ namespace CoreWCF.Security
 
         protected override void StartEncryptionCore(SecurityToken token, SecurityKeyIdentifier keyIdentifier)
         {
-            throw new NotImplementedException();
+            this.encryptingSymmetricAlgorithm = SecurityUtils.GetSymmetricAlgorithm(this.EncryptionAlgorithm, token);
+            if (this.encryptingSymmetricAlgorithm == null)
+            {
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(
+                    SR.GetString(SR.UnableToCreateSymmetricAlgorithmFromToken, this.EncryptionAlgorithm)));
+            }
+            this.encryptionKeyIdentifier = keyIdentifier;
+            this.referenceList = new ReferenceList();
         }
 
         protected override ISecurityElement CompleteEncryptionCore(SendSecurityHeaderElement primarySignature, SendSecurityHeaderElement[] basicTokens, SendSecurityHeaderElement[] signatureConfirmations, SendSecurityHeaderElement[] endorsingSignatures)

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Security.Cryptography;
 using CoreWCF.IdentityModel.Tokens;
+using CoreWCF.Security;
 using Linq = System.Linq;
 
 namespace CoreWCF.IdentityModel
@@ -159,7 +160,51 @@ namespace CoreWCF.IdentityModel
 
         internal static SymmetricAlgorithm GetSymmetricAlgorithm(byte[] key, string algorithm)
         {
-            throw new PlatformNotSupportedException();
+            SymmetricAlgorithm symmetricAlgorithm;
+
+            object algorithmObject = GetAlgorithmFromConfig(algorithm);
+
+            if (algorithmObject != null)
+            {
+                symmetricAlgorithm = algorithmObject as SymmetricAlgorithm;
+                if (symmetricAlgorithm != null)
+                {
+                    if (key != null)
+                    {
+                        symmetricAlgorithm.Key = key;
+                    }
+                    return symmetricAlgorithm;
+                }
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new InvalidOperationException(SR.GetString(SR.CustomCryptoAlgorithmIsNotValidSymmetricAlgorithm, algorithm)));
+            }
+
+            // NOTE: HMACSHA1 and HMACSHA256 ( KeyedHashAlgorithms ) are symmetric algorithms but they do not extend Symmetric class. 
+            // Hence the function throws when they are passed as arguments.
+
+            switch (algorithm)
+            {
+                case SecurityAlgorithms.TripleDesEncryption:
+                case SecurityAlgorithms.TripleDesKeyWrap:
+                    symmetricAlgorithm = new TripleDESCryptoServiceProvider();
+                    break;
+                case SecurityAlgorithms.Aes128Encryption:
+                case SecurityAlgorithms.Aes192Encryption:
+                case SecurityAlgorithms.Aes256Encryption:
+                case SecurityAlgorithms.Aes128KeyWrap:
+                case SecurityAlgorithms.Aes192KeyWrap:
+                case SecurityAlgorithms.Aes256KeyWrap:
+                    symmetricAlgorithm = SecurityUtils.RequiresFipsCompliance ? (Rijndael)new RijndaelCryptoServiceProvider() : new RijndaelManaged();
+                    break;
+                default:
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new InvalidOperationException(SR.GetString(SR.UnsupportedEncryptionAlgorithm, algorithm)));
+
+            }
+
+            if (key != null)
+            {
+                symmetricAlgorithm.Key = key;
+            }
+            return symmetricAlgorithm;
         }
 
         internal static bool IsSymmetricSupportedAlgorithm(string algorithm, int keySize)
