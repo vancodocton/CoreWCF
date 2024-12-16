@@ -21,7 +21,7 @@ namespace CoreWCF.Security
     internal class WSSecurityOneDotZeroReceiveSecurityHeader : ReceiveSecurityHeader
     {
         private KeyedHashAlgorithm _signingKey;
-        private SignedXml pendingSignature;
+        private SignedXml _pendingSignature;
         private const string SIGNED_XML_HEADER = "signed_xml_header";
         public WSSecurityOneDotZeroReceiveSecurityHeader(Message message, string actor, bool mustUnderstand, bool relay,
             SecurityStandardsManager standardsManager,
@@ -84,7 +84,7 @@ namespace CoreWCF.Security
             throw new PlatformNotSupportedException();
         }
 
-        bool EnsureDigestValidityIfIdMatches(
+        private bool EnsureDigestValidityIfIdMatches(
             SignedInfo signedInfo,
             string id, XmlDictionaryReader reader, bool doSoapAttributeChecks,
             MessagePartSpecification signatureParts, MessageHeaderInfo info, bool checkForTokensAtHeaders)
@@ -95,7 +95,8 @@ namespace CoreWCF.Security
             }
             if (doSoapAttributeChecks)
             {
-                VerifySoapAttributeMatchForHeader(info, signatureParts, reader);
+                //VerifySoapAttributeMatchForHeader(info, signatureParts, reader);
+                throw new PlatformNotSupportedException();
             }
 
             bool signed = false;
@@ -103,19 +104,47 @@ namespace CoreWCF.Security
 
             try
             {
-                signed = signedInfo.EnsureDigestValidityIfIdMatches(id, reader);
+                //signed = signedInfo.EnsureDigestValidityIfIdMatches(id, reader);
+                // There is no public API to validate partially reference by id in signature.
+                // It is impposible to extend this function because SignedXml is closed to extend.
+                // Only CheckSignature is expose to validate all references. In our current
+                // use case, only body is signed. The following is the workaround.
+
+                using XmlReader subReader = reader.ReadSubtree();
+                XmlDocument doc = new XmlDocument();
+                doc.Load(subReader);
+                var signedXml = new SignedXMLInternal(doc);
+                signedXml.LoadXml(_pendingSignature.Signature.GetXml());
+
+                AlgorithmSuite.GetSignatureAlgorithmAndKey(SignatureToken, out string signatureAlgorithm, out SecurityKey signatureKey, out XmlDictionaryString signatureAlgorithmDictionaryString);
+                GetSigningAlgorithm(signatureKey, signatureAlgorithm, out _signingKey, out AsymmetricAlgorithm asymmetricAlgorithm);
+                if (_signingKey != null)
+                {
+                    if (!signedXml.CheckSignature(_signingKey))
+                    {
+                        throw new CryptographicException("Signature not valid.");
+                    }
+                }
+                else
+                {
+                    if (!signedXml.CheckSignature(asymmetricAlgorithm))
+                    {
+                        throw new CryptographicException("Signature not valid.");
+                    }
+                }
+                signed = true;
             }
             catch (CryptographicException exception)
             {
                 //
                 // Wrap the crypto exception here so that the perf couter can be updated correctly
                 //
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.FailedSignatureVerification), exception));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.FailedSignatureVerification, exception));
             }
 
             if (signed && isRecognizedSecurityToken)
             {
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.SecurityTokenFoundOutsideSecurityHeader, info.Namespace, info.Name)));
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.Format(SR.SecurityTokenFoundOutsideSecurityHeader, info.Namespace, info.Name)));
             }
 
             return signed;
@@ -132,10 +161,10 @@ namespace CoreWCF.Security
             MessagePartSpecification encryptionParts = this.RequiredEncryptionParts ?? MessagePartSpecification.NoParts;
             MessagePartSpecification signatureParts = this.RequiredSignatureParts ?? MessagePartSpecification.NoParts;
 
-            bool checkForTokensAtHeaders = hasAtLeastOneSupportingTokenExpectedToBeSigned;
-            bool doSoapAttributeChecks = !signatureParts.IsBodyIncluded;
+            //bool checkForTokensAtHeaders = hasAtLeastOneSupportingTokenExpectedToBeSigned;
+            //bool doSoapAttributeChecks = !signatureParts.IsBodyIncluded;
             bool encryptBeforeSign = this.EncryptBeforeSignMode;
-            SignedInfo signedInfo = this.pendingSignature != null ? this.pendingSignature.Signature.SignedInfo : null;
+            SignedInfo signedInfo = this._pendingSignature != null ? this._pendingSignature.Signature.SignedInfo : null;
 
             SignatureConfirmations signatureConfirmations = this.GetSentSignatureConfirmations();
             if (signatureConfirmations != null && signatureConfirmations.Count > 0 && signatureConfirmations.IsMarkedForEncryption)
@@ -200,7 +229,8 @@ namespace CoreWCF.Security
                 bool headerSigned;
                 if ((!isHeaderEncrypted || encryptBeforeSign) && id != null)
                 {
-                    headerSigned = EnsureDigestValidityIfIdMatches(signedInfo, id, reader, doSoapAttributeChecks, signatureParts, info, checkForTokensAtHeaders);
+                    throw new PlatformNotSupportedException();
+                    //headerSigned = EnsureDigestValidityIfIdMatches(signedInfo, id, reader, doSoapAttributeChecks, signatureParts, info, checkForTokensAtHeaders);
                 }
                 else
                 {
@@ -209,6 +239,8 @@ namespace CoreWCF.Security
 
                 if (isHeaderEncrypted)
                 {
+                    throw new PlatformNotSupportedException();
+                    /*
                     XmlDictionaryReader decryptionReader = headerSigned ? headers.GetReaderAtHeader(i) : reader;
                     DecryptedHeader decryptedHeader = DecryptHeader(decryptionReader, this.pendingDecryptionToken);
                     info = decryptedHeader;
@@ -226,6 +258,7 @@ namespace CoreWCF.Security
                         headerSigned = EnsureDigestValidityIfIdMatches(signedInfo, id, decryptedHeaderReader, doSoapAttributeChecks, signatureParts, info, checkForTokensAtHeaders);
                         decryptedHeaderReader.Close();
                     }
+                    */
                 }
 
                 if (!headerSigned && signatureParts.IsHeaderIncluded(info.Name, info.Namespace))
@@ -243,7 +276,7 @@ namespace CoreWCF.Security
                 if (isHeaderEncrypted && !headerSigned)
                 {
                     // We require all encrypted headers (outside the security header) to be signed.
-                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.GetString(SR.EncryptedHeaderNotSigned, info.Name, info.Namespace)));
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(SR.Format(SR.EncryptedHeaderNotSigned, info.Name, info.Namespace)));
                 }
 
                 if (!headerSigned && !isHeaderEncrypted)
@@ -265,7 +298,7 @@ namespace CoreWCF.Security
             this.ElementManager.VerifyUniquenessAndSetBodyId(bodyId);
             this.SecurityVerifiedMessage.SetBodyPrefixAndAttributes(reader);
 
-            bool expectBodyEncryption = encryptionParts.IsBodyIncluded || HasPendingDecryptionItem();
+            bool expectBodyEncryption = encryptionParts.IsBodyIncluded /*|| HasPendingDecryptionItem()*/;
 
             bool bodySigned;
             if ((!expectBodyEncryption || encryptBeforeSign) && bodyId != null)
@@ -280,6 +313,8 @@ namespace CoreWCF.Security
             bool bodyEncrypted;
             if (expectBodyEncryption)
             {
+                throw new PlatformNotSupportedException();
+                /*
                 XmlDictionaryReader bodyReader = bodySigned ? this.SecurityVerifiedMessage.CreateFullBodyReader() : reader;
                 bodyReader.ReadStartElement();
                 string bodyContentId = idManager.ExtractId(bodyReader);
@@ -299,6 +334,7 @@ namespace CoreWCF.Security
                     bodySigned = EnsureDigestValidityIfIdMatches(signedInfo, bodyId, bodyReader, false, null, null, false);
                     bodyReader.Close();
                 }
+                */
             }
             else
             {
@@ -312,12 +348,12 @@ namespace CoreWCF.Security
 
             reader.Close();
 
-            if (this.pendingSignature != null)
+            if (this._pendingSignature != null)
             {
-                this.pendingSignature.CompleteSignatureVerification();
-                this.pendingSignature = null;
+                //this._pendingSignature.CompleteSignatureVerification();
+                this._pendingSignature = null;
             }
-            this.pendingDecryptionToken = null;
+            //this.pendingDecryptionToken = null;
             atLeastOneHeaderOrBodyEncrypted |= bodyEncrypted;
 
             if (!bodySigned && signatureParts.IsBodyIncluded)
@@ -417,6 +453,10 @@ namespace CoreWCF.Security
                 throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(
                     SR.Format(SR.UnableToCreateICryptoFromTokenForSignatureVerification, token)));
             }
+
+            AlgorithmSuite.EnsureAcceptableSignatureKeySize(securityKey, token);
+            AlgorithmSuite.EnsureAcceptableSignatureAlgorithm(securityKey, signedXml.Signature.SignedInfo.SignatureMethod);
+
             // signedXml.SigningKey = securityKey;
 
             // signedXml.StartSignatureVerification(securityKey);
@@ -461,8 +501,6 @@ namespace CoreWCF.Security
                 // signedXml.CompleteSignatureVerification();
 
                 SecurityAlgorithmSuite suite = AlgorithmSuite;
-                AlgorithmSuite.EnsureAcceptableSignatureKeySize(securityKey, token);
-                AlgorithmSuite.EnsureAcceptableSignatureAlgorithm(securityKey, signedXml.Signature.SignedInfo.SignatureMethod);
                 string canonicalizationAlgorithm = suite.DefaultCanonicalizationAlgorithm;
                 suite.GetSignatureAlgorithmAndKey(token, out string signatureAlgorithm, out SecurityKey signatureKey, out XmlDictionaryString signatureAlgorithmDictionaryString);
                 GetSigningAlgorithm(signatureKey, signatureAlgorithm, out _signingKey, out AsymmetricAlgorithm asymmetricAlgorithm);
@@ -480,8 +518,9 @@ namespace CoreWCF.Security
                         throw new Exception("Signature not valid.");
                     }
                 }
+                return token;
             }
-            // this.pendingSignature = signedXml;
+            this._pendingSignature = signedXml;
 
             //if (TD.SignatureVerificationSuccessIsEnabled())
             //{
