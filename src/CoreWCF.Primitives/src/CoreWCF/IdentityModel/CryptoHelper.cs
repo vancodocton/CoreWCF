@@ -188,6 +188,7 @@ namespace CoreWCF.IdentityModel
                 case SecurityAlgorithms.TripleDesKeyWrap:
                     symmetricAlgorithm = new TripleDESCryptoServiceProvider();
                     break;
+                /*
                 case SecurityAlgorithms.Aes128Encryption:
                 case SecurityAlgorithms.Aes192Encryption:
                 case SecurityAlgorithms.Aes256Encryption:
@@ -196,6 +197,7 @@ namespace CoreWCF.IdentityModel
                 case SecurityAlgorithms.Aes256KeyWrap:
                     symmetricAlgorithm = SecurityUtils.RequiresFipsCompliance ? (Rijndael)new RijndaelCryptoServiceProvider() : new RijndaelManaged();
                     break;
+                */
                 default:
                     // TODO: Add to resx file
                     throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new InvalidOperationException(SR.Format("SR.UnsupportedEncryptionAlgorithm", algorithm)));
