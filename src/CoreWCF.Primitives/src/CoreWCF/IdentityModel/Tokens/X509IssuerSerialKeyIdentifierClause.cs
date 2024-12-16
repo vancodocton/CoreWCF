@@ -35,7 +35,7 @@ namespace CoreWCF.IdentityModel.Tokens
             }
 
             IssuerName = certificate.Issuer;
-            IssuerSerialNumber = certificate.GetSerialNumberString();
+            IssuerSerialNumber = Asn1IntegerConverter.Asn1IntegerToDecimalString(certificate.GetSerialNumber());
         }
 
         public string IssuerName { get; }
@@ -55,7 +55,7 @@ namespace CoreWCF.IdentityModel.Tokens
                 return false;
             }
 
-            return Matches(certificate.Issuer, certificate.GetSerialNumberString());
+            return Matches(certificate.Issuer, Asn1IntegerConverter.Asn1IntegerToDecimalString(certificate.GetSerialNumber()));
         }
 
         public bool Matches(string issuerName, string issuerSerialNumber)

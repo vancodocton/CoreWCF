@@ -1,12 +1,12 @@
-﻿//------------------------------------------------------------
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-//------------------------------------------------------------
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
 
-namespace System.IdentityModel
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace CoreWCF.IdentityModel
 {
-    using System.Collections.Generic;
-    using System.Text;
-
     static class Asn1IntegerConverter
     {
         static List<byte[]> powersOfTwo = new List<byte[]>(new byte[][] { new byte[] { 1 } });
@@ -18,7 +18,8 @@ namespace System.IdentityModel
                 throw DiagnosticUtility.ExceptionUtility.ThrowHelperArgumentNull("asn1");
 
             if (asn1.Length == 0)
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new ArgumentOutOfRangeException("asn1", SR.GetString(SR.LengthOfArrayToConvertMustGreaterThanZero)));
+                // TODO: Add LengthOfArrayToConvertMustGreaterThanZeroto *.resx files.
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new ArgumentOutOfRangeException("asn1", "LengthOfArrayToConvertMustGreaterThanZero"));
 
 
             List<byte> positiveDecimalDigits = new List<byte>((asn1.Length * 8) / 3);
