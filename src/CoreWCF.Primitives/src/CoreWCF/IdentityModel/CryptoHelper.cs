@@ -175,7 +175,8 @@ namespace CoreWCF.IdentityModel
                     }
                     return symmetricAlgorithm;
                 }
-                throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new InvalidOperationException(SR.GetString(SR.CustomCryptoAlgorithmIsNotValidSymmetricAlgorithm, algorithm)));
+                // TODO: add to resx file
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new InvalidOperationException(SR.Format("SR.CustomCryptoAlgorithmIsNotValidSymmetricAlgorithm", algorithm)));
             }
 
             // NOTE: HMACSHA1 and HMACSHA256 ( KeyedHashAlgorithms ) are symmetric algorithms but they do not extend Symmetric class. 
@@ -196,7 +197,8 @@ namespace CoreWCF.IdentityModel
                     symmetricAlgorithm = SecurityUtils.RequiresFipsCompliance ? (Rijndael)new RijndaelCryptoServiceProvider() : new RijndaelManaged();
                     break;
                 default:
-                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new InvalidOperationException(SR.GetString(SR.UnsupportedEncryptionAlgorithm, algorithm)));
+                    // TODO: Add to resx file
+                    throw DiagnosticUtility.ExceptionUtility.ThrowHelperWarning(new InvalidOperationException(SR.Format("SR.UnsupportedEncryptionAlgorithm", algorithm)));
 
             }
 
