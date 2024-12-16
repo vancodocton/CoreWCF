@@ -64,6 +64,10 @@ namespace CoreWCF.Channels
                 RecordActualMessageSize(size);
                 return new ArraySegment<byte>(buffer, initialOffset, size - initialOffset);
             }
+            catch (Exception ex)
+            {
+                throw;
+            }
             finally
             {
                 _stream.Clear();
