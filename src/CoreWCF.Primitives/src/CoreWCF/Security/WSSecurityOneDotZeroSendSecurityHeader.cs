@@ -77,10 +77,7 @@ namespace CoreWCF.Security
         // 2. Else if strtransform is enabled it adds a reference the security token's keyIdentifier's id.
         private void AddTokenSignatureReference(SecurityToken token, SecurityKeyIdentifierClause keyIdentifierClause, bool strTransformEnabled)
         {
-            if (strTransformEnabled)
-            {
-                throw new PlatformNotSupportedException();
-            }
+            throw new PlatformNotSupportedException();
         }
 
         private void AddSignatureReference(SendSecurityHeaderElement[] elements)
@@ -118,6 +115,17 @@ namespace CoreWCF.Security
                     {
                         AddReference("#" + elements[i].Id, stream);
                     }
+                }
+            }
+        }
+
+        private void AddSignatureReference(SecurityToken[] tokens, SecurityTokenAttachmentMode mode)
+        {
+            if (tokens != null)
+            {
+                for (int i = 0; i < tokens.Length; ++i)
+                {
+                    AddSignatureReference(tokens[i], i, mode);
                 }
             }
         }
@@ -393,7 +401,9 @@ namespace CoreWCF.Security
 
             if (RequireMessageProtection)
             {
-                throw new PlatformNotSupportedException(nameof(RequireMessageProtection));
+                AddSignatureReference(signedEndorsingTokens, SecurityTokenAttachmentMode.SignedEndorsing);
+                AddSignatureReference(signedTokens, SecurityTokenAttachmentMode.Signed);
+                AddSignatureReference(basicTokens);
             }
 
             if (_signedXml.SignedInfo.References.Count == 0)
@@ -631,7 +641,7 @@ namespace CoreWCF.Security
             if (this.encryptingSymmetricAlgorithm == null)
             {
                 throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new MessageSecurityException(
-                    SR.GetString(SR.UnableToCreateSymmetricAlgorithmFromToken, this.EncryptionAlgorithm)));
+                    SR.Format(SR.UnableToCreateSymmetricAlgorithmFromToken, this.EncryptionAlgorithm)));
             }
             this.encryptionKeyIdentifier = keyIdentifier;
             this.referenceList = new ReferenceList();
